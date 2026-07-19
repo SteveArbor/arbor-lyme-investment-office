@@ -1,6 +1,9 @@
 # 0014. Decision Engine as a Dedicated, Non-Executing Domain
 
-**Status:** Accepted
+**Status:** Superseded by [0023](0023-investment-rating-vs-portfolio-action.md)
+— the domain itself (this ADR's core decision) remains accepted; only the
+single-enum output vocabulary described here has been replaced by the
+Investment Rating / Portfolio Action split.
 
 ## Context
 

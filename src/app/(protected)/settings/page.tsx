@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { composeFoundationServices } from "@/application/services";
+import { composeAppServices } from "@/application/services";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 import { SettingsForm } from "./settings-form";
@@ -17,7 +17,7 @@ export default async function SettingsPage() {
 
   // Non-null: (protected)/layout.tsx redirects unauthenticated requests
   // before this page renders.
-  const { settingsService } = composeFoundationServices(supabase);
+  const { settingsService } = composeAppServices(supabase);
   const settings = await settingsService.getSettings(user!.id);
 
   return (

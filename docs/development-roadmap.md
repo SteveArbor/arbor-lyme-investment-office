@@ -5,13 +5,15 @@ working, deployable increment that the next phase builds on. No phase depends on
 work being redone from a prior phase. Application code, package installation, and
 database schema work begin only once each phase is explicitly approved.
 
-This is the second revision of this roadmap. The first (Phase 0.5) expanded scope
-to include research, documents, AI, and alerts as first-class domains. This
-revision adopts the explicit 14-phase delivery sequence below, separating market
-data, analytics, rules, and decision support into their own distinct phases —
-reflecting that a rules engine and a decision engine are architecturally
-significant enough (`rules-engine.md`, `decision-engine.md`) to warrant dedicated
-delivery phases rather than being folded into "analytics" or "AI" generally.
+This is the third revision of this roadmap. The first (Phase 0.5) expanded scope
+to include research, documents, AI, and alerts as first-class domains. The second
+adopted a 14-phase sequence separating market data, analytics, rules, and decision
+support into distinct phases. This revision consolidates what was Phases 2, 3, 4,
+5, 6, and part of 12 into a single large Phase 2 — "Investment Research Platform"
+— at the explicit direction of the project owner, who wants complete milestones
+rather than many small phase approvals. Subsequent phases are renumbered
+accordingly. See ADR 0023 for the architectural decision (Investment Rating vs.
+Portfolio Action) this consolidated phase is built around.
 
 **A standing principle across every phase from here on: AI consumes verified
 data and never performs authoritative financial calculations.** Every phase that
@@ -62,177 +64,165 @@ correctly audited — on a deployed, tested, documented application containing n
 invented financial data. _(This is the current milestone — see
 `docs/implementation/foundation.md`.)_
 
-## Phase 2 — Portfolio, Holdings, Accounts and Transaction Ledger
+## Phase 2 — Investment Research Platform
 
-**Goal:** the minimum viable system of record.
+**Goal:** the complete Research and Portfolio domain — a single large
+milestone (not six small phases) at the explicit direction of the
+project owner. This phase bundles what earlier revisions of this roadmap
+sequenced as separate phases (portfolio, market data, analytics, rules,
+decision engine, research, reporting/review) into one coherent build,
+plus several concepts not previously scoped at all (Company as the
+anchor entity, Valuation as an independent domain, the Thesis Engine,
+Decision Journal, Monitoring Dashboard, Version History). See ADR 0023
+for the Investment Rating / Portfolio Action split this phase is built
+around, and `docs/domain-driven-design.md`'s updated bounded-context
+table for the full domain list.
 
-- Implement `portfolio` and `trading` bounded contexts.
-- RLS-scoped portfolios, accounts, holdings, and the immutable transaction ledger.
-- `TransactionCreated`/`HoldingUpdated` events wired to audit (recalculation
-  arrives in Phase 4, once `analytics` exists).
-- Primary CRUD screens: Portfolio List/Detail, Holding Detail, Transactions List,
-  Add/Edit Transaction.
+**Sequencing within the phase** (dependency order — earlier items are
+inputs to later ones, not an approval gate between them):
 
-**Exit criteria:** the principal can fully replace their spreadsheet workflow for
-recording holdings and transactions, with every change auditable.
+1. **`company`** — the Company aggregate (profile, sector, industry,
+   exchange, currency, ticker, status, watchlist, notes): repository,
+   domain model, DTOs, service, validation, API, UI. The anchor entity
+   every later item below references by `companyId`.
+2. **`research`** — structured research sections (business overview,
+   thesis, moat, management, financial strength, capital allocation,
+   growth drivers, risks, monitoring metrics, notes), each independently
+   editable. Exists independently of valuation and portfolio, per
+   `research-workspace.md`.
+3. **Thesis Engine** — structured thesis statements (description,
+   confidence, status: Strengthening/Stable/Weakening/Broken) with an
+   automatically-calculated overall thesis status.
+4. **`valuation`** — base/bear/bull scenario valuation: EPS and growth
+   assumptions, terminal multiple, discount rate, required return, margin
+   of safety, scenario probabilities. Generic across any company —
+   no company-specific logic hardcoded anywhere in this domain.
+5. **`decision`** — the Decision Engine, producing `InvestmentRating`
+   (Exceptional/Strong Buy/Buy/Hold/Reduce Conviction/Sell/Avoid) from
+   business quality, economic moat, financial strength, capital
+   allocation, growth, risk, expected return, and margin of safety —
+   plus calculated conviction and an overall investment score. Business
+   rules live entirely in this domain (`decision-engine.md`, ADR 0023).
+6. **`portfolio`** — holdings, cash, position sizing, allocation, current
+   value, unrealised gain/loss, conviction, fair value, target allocation,
+   and the **Portfolio Engine** producing `PortfolioAction`
+   (Initiate Position/Add/Hold/Trim/Exit) from `InvestmentRating` +
+   portfolio state. Portfolio consumes research; research never depends
+   on portfolio (enforced by the dependency direction in
+   `domain-driven-design.md`).
+7. **`trading`** — the transaction ledger (buy, sell, dividend, cash
+   adjustment) with automatic average cost, current holding, realised
+   and unrealised gain calculation.
+8. **`journal`** — the Decision Journal: purchase date/price, fair value,
+   expected return, position size, conviction, thesis, risks, and
+   invalidation conditions recorded at the time of a decision; sale
+   date/reason/lessons-learned recorded later.
+9. **Monitoring Dashboard** — per-company tracking of thesis status,
+   valuation status, margin of safety, expected return, risks, and
+   monitoring metrics, designed so a future earnings update is a single
+   write that flows through to every dependent view.
+10. **Version History** — every update to research, valuation, thesis, or
+    assumptions preserves the previous version; nothing is overwritten.
+11. **UI** — Company List/Detail, Research, Thesis, Valuation, Portfolio,
+    Holdings, Transactions, Decision Journal, and Dashboard screens,
+    responsive, using the existing design system (`product-specification.md`
+    extended for this phase's screens).
 
-## Phase 3 — Market Data Provider Integration and Caching
+**Architecture rules for this phase** (restated from `docs/domain-driven-design.md`
+and `docs/engineering-standards.md`, binding throughout): business rules
+belong in the Domain; Application orchestrates; Infrastructure persists;
+Presentation stays thin. No duplicated logic. No TODO placeholders. No
+mock implementations unless explicitly labelled as such. RLS on every new
+table, with a negative-path test.
 
-**Goal:** trusted, current (or honestly-stale-labelled) pricing.
+**Exit criteria:** the principal can track a company from first research
+through thesis, valuation, an explainable Investment Rating, a
+portfolio-aware Portfolio Action, an actual position with transactions,
+and a decision journal entry — with full version history and no invented
+data anywhere in the chain. `pnpm check` clean; unit and integration
+tests passing.
 
-- Implement `market` context and a first real `MarketDataProvider` implementation.
-- Price caching/refresh strategy (`data-flow.md` §4) with `sourceTimestamp`
-  tracked on every stored price.
-- Watchlist and Asset Detail screens.
+## Phase 3 — Document Repository
 
-**Exit criteria:** holdings display current market value with a visible,
-accurate data-freshness indicator — never presented as more current than it is.
+**Goal:** managed source material (`document-management.md`), attachable
+to companies, research notes, and journal entries.
 
-## Phase 4 — Portfolio Analytics and Performance Calculations
-
-**Goal:** deterministic, tested, authoritative financial calculations — the
-figures every later phase (rules, decisions, AI) treats as ground truth.
-
-- Implement `analytics`: valuation, allocation, time-weighted/money-weighted
-  performance.
-- `PortfolioCalculated` event wiring, recalculation triggered by
-  `TransactionCreated`/`HoldingUpdated`/`PriceUpdated`.
-- Performance & Analytics screen; historical charting.
-- Highest unit-test coverage bar in the codebase applies here
-  (`engineering-standards.md`) — this is the domain every later phase's trust
-  depends on.
-
-**Exit criteria:** the principal can answer "how has this portfolio performed"
-and "how is it allocated," with figures that are reproducible and independently
-verifiable.
-
-## Phase 5 — Rules Engine
-
-**Goal:** deterministic investment discipline, independent of AI
-(`rules-engine.md`).
-
-- Implement `rules`: `RuleDefinition`, versioned conditions, pure-function
-  evaluation against a snapshot of Phase 2–4 data.
-- The seven example rules from `rules-engine.md` (allocation limits, buy zones,
-  stop levels, cash thresholds, trim targets, stale data, earnings proximity)
-  implemented and unit-tested without any infrastructure dependency.
-- Rule results feed `alerts`-shaped events; no UI surface required yet beyond
-  what's needed to observe rule output for verification.
-
-**Exit criteria:** every example rule fires correctly and reproducibly against
-known test fixtures, with inputs recorded on every evaluation.
-
-## Phase 6 — Decision Engine
-
-**Goal:** explainable, synthesized recommendations (`decision-engine.md`) — the
-first phase where AI may be consulted, and strictly as synthesis over Phase 4/5's
-already-finalized figures and signals.
-
-- Implement `decision`: `DecisionContext` assembly, `DecisionRecommendation`
-  with the full explainability contract (evidence, risks, invalidation
-  conditions, source timestamps, conclusion source).
-- First real `AIProvider` implementation, used only for narrative synthesis —
-  never for computing a figure `analytics` already owns.
-- `conclusionSource` correctly distinguishes deterministic-only from
-  AI-assisted recommendations.
-
-**Exit criteria:** a recommendation can be produced from rules alone (AI
-unavailable) and, separately, with AI synthesis added — both fully explainable
-and auditable, and never placing a trade.
-
-## Phase 7 — Investment Dashboard
-
-**Goal:** bring Phases 2–6 together into the primary daily-use screen.
-
-- Full Dashboard screen (`product-specification.md`) — real portfolio summary,
-  allocation, recent transactions, active rule signals, and (if a recommendation
-  exists) a decision summary — replacing the Foundation-phase placeholder
-  widgets with real, verified data for the first time.
-
-**Exit criteria:** the Dashboard is the principal's genuine daily reference,
-built entirely on deterministic and explainable data.
-
-## Phase 8 — Research Workspace
-
-**Goal:** durable investment reasoning (`research-workspace.md`).
-
-- Implement `research`: `ResearchNote`, structured sections, review history.
-- Research Workspace and Research Note Detail screens.
-- AI Summary section deferred until Phase 10 unless Phase 6's `AIProvider`
-  implementation is reused early — a decision made when this phase begins, not
-  pre-committed now.
-
-**Exit criteria:** the principal can attach and retrieve structured thesis
-reasoning against a holding, with review history intact.
-
-## Phase 9 — Document Repository
-
-**Goal:** managed source material (`document-management.md`).
-
-- Implement `documents`: upload, metadata, tagging, version history, entity
-  relationships, `StorageProvider` integration.
+- Implement `documents`: upload, metadata, tagging, version history,
+  entity relationships, `StorageProvider` integration.
 - Document Repository and Document Detail screens.
-- `DocumentProvider` ships as a `NullDocumentProvider` (no OCR/extraction yet).
+- `DocumentProvider` ships as a `NullDocumentProvider` (no OCR/extraction
+  yet).
 
-**Exit criteria:** the principal can attach source documents to a holding/
-research note and retrieve them with full version history.
+**Exit criteria:** the principal can attach source documents to a
+company/research note and retrieve them with full version history.
 
-## Phase 10 — AI Analysis and Daily Briefing
+## Phase 4 — AI Analysis and Daily Briefing
 
-**Goal:** proactive AI-assisted synthesis across the now-complete deterministic
-base (Phases 2–9).
+**Goal:** proactive AI-assisted synthesis across the now-complete
+deterministic base (Phase 2).
 
-- Full `ai` context: brief generation (`BriefGenerated`), Research Note AI
+- Full `ai` context: brief generation (`BriefGenerated`), Research AI
   Summary, opportunity narrative generation.
+- First real `AIProvider` implementation, used only for narrative
+  synthesis — never for computing a figure `analytics`/`valuation`/
+  `decision` already own.
 - AI Briefing screen.
 - Every AI output labelled with provider/model/timestamp; every AI output
   traceable to the verified data it was built from (`data-flow.md` §7).
 
-**Exit criteria:** the principal receives a meaningful daily briefing built
-entirely from verified, already-computed data — with AI's contribution limited
-to synthesis and narrative, never calculation.
+**Exit criteria:** the principal receives a meaningful daily briefing
+built entirely from verified, already-computed data — with AI's
+contribution limited to synthesis and narrative, never calculation.
 
-## Phase 11 — Alerts and Notifications
+## Phase 5 — Alerts and Notifications
 
 **Goal:** timely, non-spammy notification of what matters.
 
-- Full `alerts` context: rule/decision-triggered alerts, dismissal, deduplication.
+- Full `alerts` context: rule/decision/portfolio-action-triggered alerts,
+  dismissal, deduplication.
 - `NotificationProvider` implementation(s) (in-app first, email second).
 - Alerts Center screen.
 
-**Exit criteria:** the principal is notified of a rule match or new
-recommendation without needing to check the dashboard proactively.
+**Exit criteria:** the principal is notified of a rule match, rating
+change, or portfolio action without needing to check the dashboard
+proactively.
 
-## Phase 12 — Reporting, Benchmarking and Review Workflows
+## Phase 6 — Reporting, Benchmarking and Review Workflows
 
 **Goal:** retrospective and comparative insight.
 
-- Exportable period reports; benchmark comparison overlays on performance charts.
-- `DecisionReview` and research review-history surfaces matured into a genuine
-  review workflow.
+- Exportable period reports; benchmark comparison overlays on performance
+  charts.
+- `DecisionReview` and research/thesis review-history surfaces matured
+  into a genuine review workflow.
 
-**Exit criteria:** the principal can review past performance against a benchmark
-and past recommendations against outcomes.
+**Exit criteria:** the principal can review past performance against a
+benchmark and past ratings/actions against outcomes.
 
-## Phase 13 — Broker Import and Read-Only Integrations (Where Supported)
+## Phase 7 — Broker Import and Read-Only Integrations (Where Supported)
 
-**Goal:** reduce manual data entry, without ever taking on trade execution.
+**Goal:** reduce manual data entry, without ever taking on trade
+execution.
 
-- Read-only broker data import (statement/CSV-based first; API-based only where
-  a broker supports it) behind the `broker_integration` feature flag.
-- Explicitly read-only — no order placement capability is introduced at this or
-  any phase (`vision.md`, `decision-engine.md`'s "never places a trade").
+- Read-only broker data import (statement/CSV-based first; API-based only
+  where a broker supports it) behind the `broker_integration` feature
+  flag.
+- Explicitly read-only — no order placement capability is introduced at
+  this or any phase (`vision.md`, `decision-engine.md`'s "never places a
+  trade").
 
-**Exit criteria:** at least one supported broker's holdings/transactions can be
-imported without manual re-entry, reviewed before being committed to the ledger.
+**Exit criteria:** at least one supported broker's holdings/transactions
+can be imported without manual re-entry, reviewed before being committed
+to the ledger.
 
-## Phase 14 — Additional Arbor Lyme Capital Modules
+## Phase 8 — Additional Arbor Lyme Capital Modules
 
-**Goal:** the deferred modules named in `feature-flags.md`, built only once the
-core platform (Phases 1–13) is solid: Property Module, Family Office, Tax
-Planning, Portfolio Sharing (external), Commercial Features. Each is scoped and
-sequenced individually when its turn comes — this phase is intentionally a
-placeholder for future planning, not a committed backlog.
+**Goal:** the deferred modules named in `feature-flags.md`, built only
+once the core platform (Phases 1–7) is solid: Property Module, Family
+Office, Tax Planning, Portfolio Sharing (external), Commercial Features.
+Each is scoped and sequenced individually when its turn comes — this
+phase is intentionally a placeholder for future planning, not a
+committed backlog.
 
 ## How Phases Are Reviewed
 

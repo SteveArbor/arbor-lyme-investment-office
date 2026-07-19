@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
-import { composeFoundationServices } from "@/application/services";
+import { composeAppServices } from "@/application/services";
 import { ValidationError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
@@ -29,7 +29,7 @@ export async function updateSettingsAction(
     return { error: "You must be signed in.", success: false };
   }
 
-  const { settingsService, eventBus } = composeFoundationServices(supabase);
+  const { settingsService, eventBus } = composeAppServices(supabase);
 
   const rawMonthlyTarget = formData.get("monthlyIncomeTarget");
   const rawSecondaryTarget = formData.get("secondaryMonthlyIncomeTarget");

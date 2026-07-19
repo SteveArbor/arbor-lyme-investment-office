@@ -27,18 +27,38 @@ context's internals — it depends only on that context's public exports (types 
 functions intended for external use) or communicates via the event system
 (`event-system.md`).
 
-| Context     | Responsibility                                                                                                               |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `portfolio` | Portfolios, accounts, holdings/positions, cost basis                                                                         |
-| `trading`   | Transactions (buys, sells, transfers, dividends, fees) — the ledger                                                          |
-| `market`    | Market data: prices, instruments/assets, reference data                                                                      |
-| `analytics` | Performance, valuation, allocation, and risk calculations derived from `portfolio`/`trading`/`market`                        |
-| `research`  | Investment theses, notes, review history (see `research-workspace.md`)                                                       |
-| `ai`        | AI-generated content: briefs, summaries, opportunity generation — orchestrates `AIProvider` (see `provider-architecture.md`) |
-| `alerts`    | Alert rules, alert generation, dismissal state                                                                               |
-| `documents` | Document metadata, tagging, versioning, relationships to other contexts (see `document-management.md`)                       |
-| `settings`  | The centralised settings engine (see `settings-engine.md`)                                                                   |
-| `audit`     | The immutable audit log (see `audit-strategy.md`)                                                                            |
+| Context     | Responsibility                                                                                                                                                                                                                                                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `company`   | The Company aggregate: profile, sector, industry, exchange, currency, ticker, status, watchlist flag, notes. The anchor entity every other domain below references by `companyId`. Absorbs what was previously described as `market`'s "instruments/reference data" responsibility (see note below).                                   |
+| `research`  | Structured research sections (business overview, investment thesis narrative, moat, management, financial strength, capital allocation, growth drivers, risks, monitoring metrics, notes), independently editable, versioned — see `research-workspace.md`. Exists independently of whether a company is held                          |
+| `thesis`    | The Thesis Engine: structured, individually-tracked thesis statements (description, confidence, status), with an automatically-calculated overall thesis status. Sibling to `research`, not nested inside it — a statement's structured status tracking is a materially different kind of data from research's freeform prose sections |
+| `valuation` | Base/bear/bull scenario valuation: EPS/growth assumptions, terminal multiple, discount rate, required return, margin of safety, scenario probabilities                                                                                                                                                                                 |
+| `decision`  | Produces `InvestmentRating` from company/analytics/rules/research inputs — never portfolio-aware (see `decision-engine.md`, ADR 0023)                                                                                                                                                                                                  |
+| `rules`     | Deterministic, versioned condition evaluation (see `rules-engine.md`)                                                                                                                                                                                                                                                                  |
+| `portfolio` | Portfolios, accounts, holdings/positions, cost basis, and the **Portfolio Engine** that computes `PortfolioAction` from `InvestmentRating` + portfolio state (ADR 0023)                                                                                                                                                                |
+| `trading`   | Transactions (buys, sells, transfers, dividends, fees) — the ledger; auto-derives average cost, realised/unrealised gain                                                                                                                                                                                                               |
+| `journal`   | The Decision Journal: what was decided, why, and what would invalidate it, recorded at the time of action, with later outcome recording                                                                                                                                                                                                |
+| `market`    | Price data only: `MarketDataProvider` integration, price history, staleness tracking — narrowed from its original scope now that `company` owns the instrument/reference-data concept (see note below)                                                                                                                                 |
+| `analytics` | Performance, valuation-input calculations, allocation, and risk calculations derived from `portfolio`/`trading`/`market`/`company`                                                                                                                                                                                                     |
+| `ai`        | AI-generated content: briefs, summaries, opportunity generation — orchestrates `AIProvider` (see `provider-architecture.md`)                                                                                                                                                                                                           |
+| `alerts`    | Alert rules, alert generation, dismissal state                                                                                                                                                                                                                                                                                         |
+| `documents` | Document metadata, tagging, versioning, relationships to other contexts (see `document-management.md`)                                                                                                                                                                                                                                 |
+| `settings`  | The centralised settings engine (see `settings-engine.md`)                                                                                                                                                                                                                                                                             |
+| `audit`     | The immutable audit log (see `audit-strategy.md`)                                                                                                                                                                                                                                                                                      |
+
+**Design note (Phase 2, resolving a Company/`market` overlap deliberately):**
+the original design gave `market` ownership of "instruments/reference data."
+Once Research, Valuation, and the Decision Engine all needed a rich,
+research-oriented anchor entity (profile, sector, status, watchlist,
+notes), keeping that shape inside `market` — a context whose other
+responsibility is volatile, externally-sourced price data — would have
+mixed two very different rates of change and two different owners
+(a human curates company metadata; a `MarketDataProvider` feeds prices
+automatically). `company` is now that anchor entity; `market` narrows to
+exactly what varies with the market: prices and the provider integration
+that fetches them, keyed by the company's ticker. Every other domain
+(`research`, `valuation`, `decision`, `portfolio`, `trading`) references
+`companyId`, not an `assetId`/`market` construct.
 
 `settings` and `audit` are not "features" bolted on the side — they are bounded
 contexts in their own right, because they have their own model (an audit record is

@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { composeFoundationServices } from "@/application/services";
+import { composeAppServices } from "@/application/services";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 const signInSchema = z.object({
@@ -41,7 +41,7 @@ export async function signInAction(
   // capture depends on this Server Action completing normally (a client
   // aborting the request mid-flow is a known, accepted limitation — see
   // docs/implementation/foundation.md).
-  const { auditService } = composeFoundationServices(supabase);
+  const { auditService } = composeAppServices(supabase);
   await auditService.record({
     actorId: data.user.id,
     eventType: "Login",
@@ -62,7 +62,7 @@ export async function signOutAction(): Promise<void> {
     // Audit BEFORE signing out: the insert-own-only RLS policy on
     // audit_events needs auth.uid() to still resolve to this user
     // (docs/audit-strategy.md, docs/data-flow.md §10).
-    const { auditService } = composeFoundationServices(supabase);
+    const { auditService } = composeAppServices(supabase);
     await auditService.record({
       actorId: user.id,
       eventType: "Logout",

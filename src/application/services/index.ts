@@ -1,2 +1,4 @@
 export { registerAuditSubscriptions } from "./audit-subscribers";
-export { composeFoundationServices } from "./compose";
+export { composeAppServices } from "./compose";
+export type { CompanyMonitoringSnapshot, MonitoringDependencies } from "./monitoring";
+export { buildCompanyMonitoringSnapshot } from "./monitoring";

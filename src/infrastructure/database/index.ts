@@ -1,2 +1,12 @@
 export { SupabaseAuditRepository } from "./audit-repository";
+export { SupabaseCompanyRepository } from "./company-repository";
+export { SupabaseDecisionRepository } from "./decision-repository";
+export { SupabaseHoldingRepository } from "./holding-repository";
+export { SupabaseJournalRepository } from "./journal-repository";
+export { SupabasePortfolioRepository } from "./portfolio-repository";
+export { SupabaseResearchRepository } from "./research-repository";
 export { SupabaseSettingsRepository } from "./settings-repository";
+export { SupabaseThesisRepository } from "./thesis-repository";
+export { SupabaseTransactionRepository } from "./transaction-repository";
+export { SupabaseValuationRepository } from "./valuation-repository";
+export { SupabaseVersionHistoryRepository } from "./version-history-repository";
