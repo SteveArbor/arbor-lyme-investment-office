@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [foundation, main]
+
+# Least-privilege default: this workflow only reads the repository and
+# writes nothing anywhere (no deployment, no PR comments, no releases).
+# See docs/deployment-strategy.md — Vercel manages deployment, not this
+# workflow.
+permissions:
+  contents: read
+
+# A newer push to the same PR/branch cancels the in-flight run for it,
+# rather than queuing redundant CI runs.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality checks
+    runs-on: ubuntu-latest
+    steps:
+      # Actions are pinned to a full commit SHA, not just a version tag —
+      # a tag can be moved to point at different code after the fact; a
+      # SHA cannot (docs/threat-model.md §11, supply chain compromise).
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v7.0.0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@0ebf47130e4866e96fce0953f49152a61190b271 # v6.0.9
+        with:
+          version: 11.15.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
+
+      - name: Install dependencies (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Dependency audit
+        # Enforced, not advisory: the one moderate finding present during
+        # Foundation development (postcss XSS, GHSA-qx2v-qp2m-jg93) was
+        # fixed via a pnpm override (pnpm-workspace.yaml), not silenced —
+        # see docs/implementation/foundation.md.
+        run: pnpm audit --audit-level=moderate
+
+      - name: Build
+        # Deliberately fake-but-well-formed values: the build must succeed
+        # without real credentials (env validation is lazy, see
+        # src/config/env.public.ts) — this is a compile/type/bundle check,
+        # not a live-integration test, and no production secret is ever
+        # given to this workflow.
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key-for-ci-build"
+          NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+        run: pnpm build

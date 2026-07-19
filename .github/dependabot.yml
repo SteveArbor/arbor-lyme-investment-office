@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # pnpm uses the "npm" ecosystem identifier in Dependabot — it reads
+  # pnpm-lock.yaml natively (docs/technology-stack.md's pnpm choice).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      # Routine minor/patch bumps are grouped into one PR to reduce noise;
+      # a major-version bump for anything security-sensitive
+      # (auth/database/crypto — docs/coding-standards.md) is deliberately
+      # left ungrouped so it gets individual review attention, not
+      # auto-merged as part of a batch.
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
