@@ -4,9 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
-import { composeAppServices } from "@/application/services";
+import { getRequestContext } from "@/application/services";
 import { ValidationError } from "@/domain/shared";
-import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 export interface ActionFormState {
   error: string | null;
@@ -31,13 +30,9 @@ export async function updateResearchAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "You must be signed in.", success: false };
-
-  const { researchService, eventBus } = composeAppServices(supabase);
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = Object.fromEntries(
     SECTIONS.map((section) => {
@@ -47,14 +42,14 @@ export async function updateResearchAction(
   );
 
   try {
-    const { event } = await researchService.updateResearch(
+    const { event } = await services.researchService.updateResearch(
       user.id,
       companyId,
       input,
       user.id,
       randomUUID()
     );
-    await eventBus.publish(event);
+    await services.eventBus.publish(event);
   } catch (error) {
     if (error instanceof ValidationError) {
       return {

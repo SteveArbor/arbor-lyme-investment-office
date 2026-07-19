@@ -1,5 +1,6 @@
 import type { HoldingRepository, PortfolioRepository } from "@/domain/portfolio";
 import {
+  ConcurrentModificationError,
   createDomainEvent,
   type DomainEvent,
   NotFoundError,
@@ -26,6 +27,15 @@ export interface TransactionRecordedPayload {
 }
 
 /**
+ * Bound on retrying a buy/sell after a ConcurrentModificationError (ADR
+ * 0025). No backoff between attempts: contention is expected to be rare
+ * and transient at this project's scale, and each attempt is already a
+ * fresh read, so an immediate retry either succeeds or reveals genuine,
+ * sustained contention that backoff wouldn't meaningfully help with.
+ */
+const MAX_CONCURRENT_WRITE_ATTEMPTS = 3;
+
+/**
  * The transaction ledger's business logic (docs/development-roadmap.md
  * Phase 2, item 7). Framework-independent. Trading is downstream of
  * Portfolio: it still reads `HoldingRepository`/`PortfolioRepository` to
@@ -34,6 +44,9 @@ export interface TransactionRecordedPayload {
  * but the actual write is a single atomic call into
  * `TransactionRepository` (Phase 2 Architecture Review finding 4.1), never
  * three separate writes this service could partially apply.
+ * recordBuy/recordSell re-read the holding and retry on
+ * ConcurrentModificationError (ADR 0025), closing the lost-update race a
+ * single unguarded read-compute-write would otherwise leave open.
  */
 export class TradingService {
   constructor(
@@ -67,27 +80,41 @@ export class TradingService {
       });
     }
 
-    const existing = await this.holdings.getByCompanyId(ownerId, portfolioId, companyId);
-    const newQuantity = (existing?.quantity ?? 0) + quantity;
-    const newAverageCost = calculateWeightedAverageCost(
-      existing?.quantity ?? 0,
-      existing?.averageCost ?? 0,
-      quantity,
-      pricePerUnit
-    );
+    for (let attempt = 1; attempt <= MAX_CONCURRENT_WRITE_ATTEMPTS; attempt++) {
+      const existing = await this.holdings.getByCompanyId(ownerId, portfolioId, companyId);
+      const newQuantity = (existing?.quantity ?? 0) + quantity;
+      const newAverageCost = calculateWeightedAverageCost(
+        existing?.quantity ?? 0,
+        existing?.averageCost ?? 0,
+        quantity,
+        pricePerUnit
+      );
 
-    const transaction = await this.transactions.recordBuy(ownerId, {
-      portfolioId,
-      companyId,
-      quantity,
-      pricePerUnit,
-      occurredAt,
-      notes: notes ?? null,
-      newHoldingQuantity: newQuantity,
-      newHoldingAverageCost: newAverageCost,
-    });
-
-    return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
+      try {
+        const transaction = await this.transactions.recordBuy(ownerId, {
+          portfolioId,
+          companyId,
+          quantity,
+          pricePerUnit,
+          occurredAt,
+          notes: notes ?? null,
+          expectedHoldingQuantity: existing?.quantity ?? 0,
+          expectedHoldingAverageCost: existing?.averageCost ?? 0,
+          newHoldingQuantity: newQuantity,
+          newHoldingAverageCost: newAverageCost,
+        });
+        return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
+      } catch (error) {
+        if (
+          error instanceof ConcurrentModificationError &&
+          attempt < MAX_CONCURRENT_WRITE_ATTEMPTS
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error("unreachable: the loop above always returns or throws");
   }
 
   async recordSell(
@@ -108,29 +135,43 @@ export class TradingService {
     const portfolio = await this.portfolios.getById(ownerId, portfolioId);
     if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
 
-    const existing = await this.holdings.getByCompanyId(ownerId, portfolioId, companyId);
-    if (!existing || existing.quantity < quantity) {
-      throw new ValidationError("Insufficient holding to sell", {
-        quantity: [`Holding has ${existing?.quantity ?? 0}, cannot sell ${quantity}`],
-      });
+    for (let attempt = 1; attempt <= MAX_CONCURRENT_WRITE_ATTEMPTS; attempt++) {
+      const existing = await this.holdings.getByCompanyId(ownerId, portfolioId, companyId);
+      if (!existing || existing.quantity < quantity) {
+        throw new ValidationError("Insufficient holding to sell", {
+          quantity: [`Holding has ${existing?.quantity ?? 0}, cannot sell ${quantity}`],
+        });
+      }
+
+      const realisedGain = calculateRealisedGain(quantity, pricePerUnit, existing.averageCost);
+      const newQuantity = existing.quantity - quantity;
+
+      try {
+        const transaction = await this.transactions.recordSell(ownerId, {
+          portfolioId,
+          companyId,
+          quantity,
+          pricePerUnit,
+          occurredAt,
+          notes: notes ?? null,
+          expectedHoldingQuantity: existing.quantity,
+          expectedHoldingAverageCost: existing.averageCost,
+          newHoldingQuantity: newQuantity,
+          newHoldingAverageCost: newQuantity > 0 ? existing.averageCost : 0,
+          realisedGain,
+        });
+        return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
+      } catch (error) {
+        if (
+          error instanceof ConcurrentModificationError &&
+          attempt < MAX_CONCURRENT_WRITE_ATTEMPTS
+        ) {
+          continue;
+        }
+        throw error;
+      }
     }
-
-    const realisedGain = calculateRealisedGain(quantity, pricePerUnit, existing.averageCost);
-    const newQuantity = existing.quantity - quantity;
-
-    const transaction = await this.transactions.recordSell(ownerId, {
-      portfolioId,
-      companyId,
-      quantity,
-      pricePerUnit,
-      occurredAt,
-      notes: notes ?? null,
-      newHoldingQuantity: newQuantity,
-      newHoldingAverageCost: newQuantity > 0 ? existing.averageCost : 0,
-      realisedGain,
-    });
-
-    return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
+    throw new Error("unreachable: the loop above always returns or throws");
   }
 
   async recordDividend(

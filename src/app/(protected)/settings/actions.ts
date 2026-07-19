@@ -4,9 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
-import { composeAppServices } from "@/application/services";
+import { getRequestContext } from "@/application/services";
 import { ValidationError } from "@/domain/shared";
-import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 export interface UpdateSettingsFormState {
   error: string | null;
@@ -17,19 +16,14 @@ export async function updateSettingsAction(
   _prevState: UpdateSettingsFormState,
   formData: FormData
 ): Promise<UpdateSettingsFormState> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const context = await getRequestContext();
+  if (!context) {
     // Should be unreachable — (protected)/layout.tsx already guards this
     // route — but the action is a valid entry point in its own right and
     // must not assume the layout ran first.
     return { error: "You must be signed in.", success: false };
   }
-
-  const { settingsService, eventBus } = composeAppServices(supabase);
+  const { user, services } = context;
 
   const rawMonthlyTarget = formData.get("monthlyIncomeTarget");
   const rawSecondaryTarget = formData.get("secondaryMonthlyIncomeTarget");
@@ -44,8 +38,8 @@ export async function updateSettingsAction(
   };
 
   try {
-    const { event } = await settingsService.updateSettings(user.id, input, randomUUID());
-    await eventBus.publish(event);
+    const { event } = await services.settingsService.updateSettings(user.id, input, randomUUID());
+    await services.eventBus.publish(event);
   } catch (error) {
     if (error instanceof ValidationError) {
       return { error: "Please check the highlighted fields and try again.", success: false };

@@ -425,6 +425,8 @@ export interface Database {
           p_price_per_unit: number;
           p_occurred_at: string;
           p_notes: string | null;
+          p_expected_holding_quantity: number;
+          p_expected_holding_average_cost: number;
           p_new_holding_quantity: number;
           p_new_holding_average_cost: number;
         };
@@ -439,6 +441,8 @@ export interface Database {
           p_price_per_unit: number;
           p_occurred_at: string;
           p_notes: string | null;
+          p_expected_holding_quantity: number;
+          p_expected_holding_average_cost: number;
           p_new_holding_quantity: number;
           p_new_holding_average_cost: number;
           p_realised_gain: number;

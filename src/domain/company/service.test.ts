@@ -16,6 +16,12 @@ class FakeCompanyRepository implements CompanyRepository {
     return row && row.ownerId === ownerId ? row : null;
   }
 
+  async getByIds(ownerId: string, companyIds: string[]): Promise<Company[]> {
+    return [...this.rows.values()].filter(
+      (row) => row.ownerId === ownerId && companyIds.includes(row.id)
+    );
+  }
+
   async getByTicker(ownerId: string, ticker: string): Promise<Company | null> {
     for (const row of this.rows.values()) {
       if (row.ownerId === ownerId && row.ticker === ticker) return row;
@@ -145,5 +151,31 @@ describe("CompanyService", () => {
     const monitoring = await service.listCompanies("user-1", { status: "monitoring" });
     expect(monitoring).toHaveLength(1);
     expect(monitoring[0].ticker).toBe("BBB");
+  });
+
+  it("getCompanies batch-reads only the requested companies for the requesting owner", async () => {
+    const repo = new FakeCompanyRepository();
+    const service = new CompanyService(repo);
+    const a = await service.createCompany("user-1", { ...validInput, ticker: "AAA" }, "c1");
+    const b = await service.createCompany("user-1", { ...validInput, ticker: "BBB" }, "c2");
+    await service.createCompany("user-1", { ...validInput, ticker: "CCC" }, "c3");
+
+    const companies = await service.getCompanies("user-1", [
+      a.company.id,
+      b.company.id,
+      "missing-id",
+    ]);
+
+    expect(companies.map((company) => company.ticker).sort()).toEqual(["AAA", "BBB"]);
+  });
+
+  it("getCompanies returns nothing for a company owned by someone else", async () => {
+    const repo = new FakeCompanyRepository();
+    const service = new CompanyService(repo);
+    const a = await service.createCompany("user-1", validInput, "c1");
+
+    const companies = await service.getCompanies("user-2", [a.company.id]);
+
+    expect(companies).toHaveLength(0);
   });
 });

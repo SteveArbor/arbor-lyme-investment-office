@@ -1,11 +1,9 @@
-import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { composeAppServices } from "@/application/services";
-import { NotFoundError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 import { CompanySubNav } from "./company-sub-nav";
+import { getCompanyOrNotFound } from "./get-company-or-not-found";
 
 export default async function CompanyLayout({
   children,
@@ -20,22 +18,13 @@ export default async function CompanyLayout({
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { companyService } = composeAppServices(supabase);
-
-  let companyName: string;
-  try {
-    const company = await companyService.getCompany(user!.id, id);
-    companyName = company.name;
-  } catch (error) {
-    if (error instanceof NotFoundError) notFound();
-    throw error;
-  }
+  const company = await getCompanyOrNotFound(user!.id, id);
 
   return (
     <main id="main-content" className="mx-auto max-w-5xl px-4 py-8">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-          {companyName}
+          {company.name}
         </h1>
       </div>
       <div className="mt-4">

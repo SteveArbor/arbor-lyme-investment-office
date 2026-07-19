@@ -94,7 +94,7 @@ export class ValuationService {
   }
 
   /** Batch read for multi-company views — never creates rows as a side effect. */
-  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Valuation[]> {
+  async listValuationsForCompanies(ownerId: string, companyIds: string[]): Promise<Valuation[]> {
     return this.repository.listByCompanyIds(ownerId, companyIds);
   }
 

@@ -1,15 +1,26 @@
 # Database Design
 
-> **Implementation status:** `profiles`, `user_settings`, and `audit_events`
-> are **Implemented** — see `supabase/migrations/` and
-> `docs/implementation/foundation.md` (including how the migrations were
-> validated). Every other table named in this document (`portfolios`,
-> `transactions`, `research_notes`, `documents`, `events`, etc.) is
-> **Planned**, not created.
+> **Implementation status:** this document is the design-principles reference
+> (naming conventions, RLS strategy, append-only strategy) — the authoritative,
+> current-as-of-milestone table list and DDL live in `supabase/migrations/`, not
+> here. `profiles`, `user_settings`, `audit_events` (Foundation),
+> `companies`, `research_notes`, `theses`, `valuations`,
+> `decision_recommendations`, `portfolios`, `holdings`, `transactions`,
+> `journal_entries` (Phase 2), and `entity_versions` (Phase 2, shared version
+> history) are **Implemented**; see
+> `docs/implementation/foundation.md`, `docs/implementation/phase-2-architecture-review.md`,
+> and `docs/implementation/phase-3-architecture-review.md` for what was
+> validated and how. `documents`, `events` (the outbox table), and the
+> multi-user `memberships` table remain **Planned**, per
+> `development-roadmap.md`. The "Anticipated Core Entities" list below
+> predates Phase 2 and is kept as historical planning context, not a current
+> schema reference — several entities it describes (`accounts`, `assets`,
+> `positions`) were superseded by the simpler `portfolios`/`holdings`/
+> `transactions` shape Phase 2 actually built.
 
 This document describes the design principles and conventions for the PostgreSQL
-schema, hosted on Supabase. It describes _how_ the schema will be designed, not the
-final DDL for tables beyond the three listed above.
+schema, hosted on Supabase. It describes _how_ the schema is designed, not a
+substitute for the migrations themselves.
 
 ## Guiding Principles
 
@@ -133,6 +144,45 @@ supporting trigger for all roles, including the privileged service role, for
 guarantee is what makes the audit trail trustworthy even against a bug or
 compromise in the application layer, and it is verified as part of that table's
 implementation, not assumed.
+
+## Atomic Multi-Table Writes and Optimistic Concurrency
+
+Some operations must change more than one table together, with no window
+where a caller could observe (or a crash could leave) a partial result —
+the trading ledger's buy/sell/dividend/cash-adjustment writes are the
+current example (`transactions`, `holdings`, `portfolios.cash` together).
+Because this project's Server Actions each make independent
+`supabase-js` round trips (there is no live connection to hold a single
+transaction open across a read, application-layer computation, and a
+later write — see `architecture.md`'s serverless/PostgREST model), this is
+handled with a Postgres function (`SECURITY INVOKER`, never `DEFINER` — RLS
+and the caller's own grants remain the enforcing authority, consistent
+with ADR 0021's "no service-role client" principle), called once via
+`.rpc()`, that performs every write inside its own single implicit
+transaction. See `supabase/migrations/20260719000014_atomic_transaction_functions.sql`
+and ADR-worthy reasoning in `docs/implementation/phase-2-architecture-review.md`
+section 4.1.
+
+Where a write also depends on a value the caller read earlier (not just
+"change this row," but "blend this new value into whatever the row
+currently holds," which cannot be expressed as a single relational delta),
+atomicity alone is not enough — a concurrent write between the read and
+this write can still silently overwrite the other's effect. The holdings
+table's quantity/average-cost columns are the current example. This is
+closed with optimistic concurrency control: the function takes the value
+the caller read as an additional parameter and only applies the write if
+the row still matches it, raising a distinct errcode otherwise so the
+caller can re-read and retry. See
+`supabase/migrations/20260720000001_optimistic_concurrency_for_holdings.sql`
+and ADR 0025 for the full reasoning, alternatives considered, and live
+concurrent-session evidence that it works.
+
+**Convention for future migrations needing either pattern:** custom
+`errcode` values use a project-specific, non-reserved prefix (`ALC0x`),
+never Postgres's reserved `P000x` range — `P0004` specifically collides
+with the built-in `ASSERT_FAILURE` condition, which `exception when
+others` does not catch, a mistake made and caught live during this
+project's own validation (ADR 0025, `docs/implementation/phase-3-architecture-review.md`).
 
 ## Indexing & Performance
 

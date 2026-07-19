@@ -60,6 +60,18 @@ export class SupabaseCompanyRepository implements CompanyRepository {
     return data ? toDomain(data) : null;
   }
 
+  async getByIds(ownerId: string, companyIds: string[]): Promise<Company[]> {
+    if (companyIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from("companies")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .in("id", companyIds);
+
+    if (error) throw error;
+    return (data ?? []).map(toDomain);
+  }
+
   async getByTicker(ownerId: string, ticker: string): Promise<Company | null> {
     const { data, error } = await this.client
       .from("companies")

@@ -7,3 +7,5 @@ export type {
   MonitoringDependencies,
 } from "./monitoring";
 export { buildCompanyMonitoringSnapshot, buildCompanyMonitoringSnapshots } from "./monitoring";
+export type { RequestContext } from "./request-context";
+export { getRequestContext } from "./request-context";

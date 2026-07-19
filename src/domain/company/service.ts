@@ -39,6 +39,11 @@ export class CompanyService {
     return this.repository.list(ownerId, filter);
   }
 
+  /** Batch read for multi-company views (e.g. a portfolio's holdings) — one query, not one per company. */
+  async getCompanies(ownerId: string, companyIds: string[]): Promise<Company[]> {
+    return this.repository.getByIds(ownerId, companyIds);
+  }
+
   async createCompany(
     ownerId: string,
     input: unknown,

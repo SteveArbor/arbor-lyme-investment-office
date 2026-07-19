@@ -4,9 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
-import { composeAppServices } from "@/application/services";
+import { getRequestContext } from "@/application/services";
 import { ValidationError } from "@/domain/shared";
-import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 export interface ActionFormState {
   error: string | null;
@@ -28,13 +27,9 @@ export async function openJournalEntryAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "You must be signed in.", success: false };
-
-  const { journalService, eventBus } = composeAppServices(supabase);
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = {
     companyId,
@@ -51,8 +46,8 @@ export async function openJournalEntryAction(
   };
 
   try {
-    const { event } = await journalService.openEntry(user.id, input, randomUUID());
-    await eventBus.publish(event);
+    const { event } = await services.journalService.openEntry(user.id, input, randomUUID());
+    await services.eventBus.publish(event);
   } catch (error) {
     return fieldError(error);
   }
@@ -67,13 +62,9 @@ export async function closeJournalEntryAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "You must be signed in.", success: false };
-
-  const { journalService, eventBus } = composeAppServices(supabase);
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = {
     saleDate: new Date(String(formData.get("saleDate"))).toISOString(),
@@ -82,8 +73,13 @@ export async function closeJournalEntryAction(
   };
 
   try {
-    const { event } = await journalService.closeEntry(user.id, entryId, input, randomUUID());
-    await eventBus.publish(event);
+    const { event } = await services.journalService.closeEntry(
+      user.id,
+      entryId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
   } catch (error) {
     return fieldError(error);
   }

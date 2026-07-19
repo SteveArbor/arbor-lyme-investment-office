@@ -42,7 +42,7 @@ export class ThesisService {
   }
 
   /** Batch read for multi-company views — never creates rows as a side effect. */
-  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Thesis[]> {
+  async listThesesForCompanies(ownerId: string, companyIds: string[]): Promise<Thesis[]> {
     return this.repository.listByCompanyIds(ownerId, companyIds);
   }
 

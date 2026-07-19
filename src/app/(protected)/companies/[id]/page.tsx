@@ -6,6 +6,7 @@ import { cardClasses } from "@/components/ui/form-styles";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 import { GenerateRatingForm } from "./generate-rating-form";
+import { getCompanyOrNotFound } from "./get-company-or-not-found";
 import { RATING_LABELS, THESIS_STATUS_LABELS } from "./labels";
 
 export const metadata: Metadata = {
@@ -20,8 +21,10 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
   } = await supabase.auth.getUser();
 
   const services = composeAppServices(supabase);
-  const company = await services.companyService.getCompany(user!.id, id);
-  const snapshot = await buildCompanyMonitoringSnapshot(services, user!.id, id);
+  const [company, snapshot] = await Promise.all([
+    getCompanyOrNotFound(user!.id, id),
+    buildCompanyMonitoringSnapshot(services, user!.id, id),
+  ]);
 
   return (
     <div className="space-y-6">

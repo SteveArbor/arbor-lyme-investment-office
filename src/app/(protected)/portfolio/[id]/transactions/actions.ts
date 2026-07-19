@@ -4,9 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
-import { composeAppServices } from "@/application/services";
+import { getRequestContext } from "@/application/services";
 import { ValidationError } from "@/domain/shared";
-import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 export interface ActionFormState {
   error: string | null;
@@ -23,14 +22,6 @@ function fieldError(error: unknown): ActionFormState {
   return { error: "Something went wrong. Please try again.", success: false };
 }
 
-async function requireUserAndServices() {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return { user, services: composeAppServices(supabase) };
-}
-
 function revalidatePortfolioPaths(portfolioId: string) {
   revalidatePath(`/portfolio/${portfolioId}/transactions`);
   revalidatePath(`/portfolio/${portfolioId}`);
@@ -41,8 +32,9 @@ export async function recordBuyAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const { user, services } = await requireUserAndServices();
-  if (!user) return { error: "You must be signed in.", success: false };
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = {
     companyId: formData.get("companyId"),
@@ -67,8 +59,9 @@ export async function recordSellAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const { user, services } = await requireUserAndServices();
-  if (!user) return { error: "You must be signed in.", success: false };
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = {
     companyId: formData.get("companyId"),
@@ -93,8 +86,9 @@ export async function recordDividendAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const { user, services } = await requireUserAndServices();
-  if (!user) return { error: "You must be signed in.", success: false };
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = {
     companyId: formData.get("companyId"),
@@ -118,8 +112,9 @@ export async function recordCashAdjustmentAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const { user, services } = await requireUserAndServices();
-  if (!user) return { error: "You must be signed in.", success: false };
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = {
     amount: Number(formData.get("amount")),

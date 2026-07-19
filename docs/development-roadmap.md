@@ -142,6 +142,19 @@ and a decision journal entry — with full version history and no invented
 data anywhere in the chain. `pnpm check` clean; unit and integration
 tests passing.
 
+> **A note on phase numbering vs. the `phase-3` git branch:** the work done
+> on the `phase-3` branch immediately after Phase 2 shipped was a
+> remediation milestone — closing the findings in
+> `docs/implementation/phase-2-architecture-review.md` (trading atomicity,
+> RLS validation, the N+1 dashboard fix, multi-portfolio UI, the
+> cross-company Journal view) plus the further hardening in
+> `docs/implementation/phase-3-architecture-review.md` (the concurrency
+> fix, the Server Action helper, broader UI/consistency work). It is not
+> this roadmap's Phase 3 (Document Repository, below) — the branch name is
+> a coincidence of when the work happened, not a redefinition of what
+> "Phase 3" means in this roadmap. Document Repository remains the next
+> **roadmap** phase to build.
+
 ## Phase 3 — Document Repository
 
 **Goal:** managed source material (`document-management.md`), attachable

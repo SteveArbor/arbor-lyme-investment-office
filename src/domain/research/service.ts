@@ -38,7 +38,7 @@ export class ResearchService {
   }
 
   /** Batch read for multi-company views — never creates rows as a side effect. */
-  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<ResearchNote[]> {
+  async listResearchForCompanies(ownerId: string, companyIds: string[]): Promise<ResearchNote[]> {
     return this.repository.listByCompanyIds(ownerId, companyIds);
   }
 

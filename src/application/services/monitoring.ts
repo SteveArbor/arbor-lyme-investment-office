@@ -106,9 +106,9 @@ export interface CompanyMonitoringSummary {
 }
 
 export interface BatchMonitoringDependencies {
-  researchService: Pick<ResearchService, "listByCompanyIds">;
-  thesisService: Pick<ThesisService, "listByCompanyIds">;
-  valuationService: Pick<ValuationService, "listByCompanyIds">;
+  researchService: Pick<ResearchService, "listResearchForCompanies">;
+  thesisService: Pick<ThesisService, "listThesesForCompanies">;
+  valuationService: Pick<ValuationService, "listValuationsForCompanies">;
   decisionService: Pick<DecisionService, "getLatestRatings">;
   journalService: Pick<JournalService, "listEntriesForCompanies">;
 }
@@ -132,9 +132,9 @@ export async function buildCompanyMonitoringSnapshots(
   if (companyIds.length === 0) return new Map();
 
   const [researchNotes, theses, valuations, latestRatings, journalEntries] = await Promise.all([
-    deps.researchService.listByCompanyIds(ownerId, companyIds),
-    deps.thesisService.listByCompanyIds(ownerId, companyIds),
-    deps.valuationService.listByCompanyIds(ownerId, companyIds),
+    deps.researchService.listResearchForCompanies(ownerId, companyIds),
+    deps.thesisService.listThesesForCompanies(ownerId, companyIds),
+    deps.valuationService.listValuationsForCompanies(ownerId, companyIds),
     deps.decisionService.getLatestRatings(ownerId, companyIds),
     deps.journalService.listEntriesForCompanies(ownerId, companyIds),
   ]);

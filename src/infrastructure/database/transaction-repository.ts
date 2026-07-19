@@ -1,5 +1,6 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PostgrestError, SupabaseClient } from "@supabase/supabase-js";
 
+import { ConcurrentModificationError } from "@/domain/shared";
 import type {
   RecordBuyData,
   RecordCashAdjustmentData,
@@ -12,6 +13,9 @@ import type {
 import type { Database } from "@/types/database";
 
 type TransactionRow = Database["public"]["Tables"]["transactions"]["Row"];
+
+/** The Postgres errcode record_buy_transaction/record_sell_transaction raise on a lost-update conflict — see ADR 0025. */
+const CONCURRENT_MODIFICATION_ERRCODE = "ALC04";
 
 function toDomain(row: TransactionRow): Transaction {
   return {
@@ -30,12 +34,21 @@ function toDomain(row: TransactionRow): Transaction {
   };
 }
 
+/** Translates the RPC's conflict errcode into the domain-level ConcurrentModificationError; rethrows anything else unchanged. */
+function throwTranslated(error: PostgrestError): never {
+  if (error.code === CONCURRENT_MODIFICATION_ERRCODE) {
+    throw new ConcurrentModificationError("Holding");
+  }
+  throw error;
+}
+
 /**
  * Every record* method calls a single Postgres function that performs the
  * ledger insert, holding update, and portfolio cash update atomically —
  * see supabase/migrations/20260719000014_atomic_transaction_functions.sql
  * and Phase 2 Architecture Review finding 4.1. There is no path here that
- * issues three separate writes.
+ * issues three separate writes. recordBuy/recordSell additionally guard
+ * the holding write with optimistic concurrency (ADR 0025).
  */
 export class SupabaseTransactionRepository implements TransactionRepository {
   constructor(private readonly client: SupabaseClient<Database>) {}
@@ -49,11 +62,13 @@ export class SupabaseTransactionRepository implements TransactionRepository {
       p_price_per_unit: data.pricePerUnit,
       p_occurred_at: data.occurredAt,
       p_notes: data.notes,
+      p_expected_holding_quantity: data.expectedHoldingQuantity,
+      p_expected_holding_average_cost: data.expectedHoldingAverageCost,
       p_new_holding_quantity: data.newHoldingQuantity,
       p_new_holding_average_cost: data.newHoldingAverageCost,
     });
 
-    if (error) throw error;
+    if (error) throwTranslated(error);
     return toDomain(row);
   }
 
@@ -66,12 +81,14 @@ export class SupabaseTransactionRepository implements TransactionRepository {
       p_price_per_unit: data.pricePerUnit,
       p_occurred_at: data.occurredAt,
       p_notes: data.notes,
+      p_expected_holding_quantity: data.expectedHoldingQuantity,
+      p_expected_holding_average_cost: data.expectedHoldingAverageCost,
       p_new_holding_quantity: data.newHoldingQuantity,
       p_new_holding_average_cost: data.newHoldingAverageCost,
       p_realised_gain: data.realisedGain,
     });
 
-    if (error) throw error;
+    if (error) throwTranslated(error);
     return toDomain(row);
   }
 

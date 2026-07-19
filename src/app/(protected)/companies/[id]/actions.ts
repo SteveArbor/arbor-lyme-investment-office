@@ -4,9 +4,8 @@ import { randomUUID } from "node:crypto";
 
 import { revalidatePath } from "next/cache";
 
-import { composeAppServices } from "@/application/services";
+import { getRequestContext } from "@/application/services";
 import { ValidationError } from "@/domain/shared";
-import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 export interface ActionFormState {
   error: string | null;
@@ -28,13 +27,9 @@ export async function generateRatingAction(
   _prevState: ActionFormState,
   formData: FormData
 ): Promise<ActionFormState> {
-  const supabase = await createSupabaseServerClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { error: "You must be signed in.", success: false };
-
-  const { decisionService, eventBus } = composeAppServices(supabase);
+  const context = await getRequestContext();
+  if (!context) return { error: "You must be signed in.", success: false };
+  const { user, services } = context;
 
   const input = {
     companyId,
@@ -49,8 +44,13 @@ export async function generateRatingAction(
   };
 
   try {
-    const { event } = await decisionService.generateRating(user.id, input, user.id, randomUUID());
-    await eventBus.publish(event);
+    const { event } = await services.decisionService.generateRating(
+      user.id,
+      input,
+      user.id,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
   } catch (error) {
     return fieldError(error);
   }

@@ -9,7 +9,7 @@ import type {
   PortfolioRepository,
   PortfolioUpdate,
 } from "@/domain/portfolio";
-import { NotFoundError, ValidationError } from "@/domain/shared";
+import { ConcurrentModificationError, NotFoundError, ValidationError } from "@/domain/shared";
 
 import type { Transaction } from "./model";
 import type {
@@ -71,6 +71,8 @@ class FakePortfolioRepository implements PortfolioRepository {
 }
 
 class FakeHoldingRepository implements HoldingRepository {
+  public getByCompanyIdCallCount = 0;
+
   constructor(public readonly rows: Holding[] = []) {}
 
   async getByCompanyId(
@@ -78,6 +80,7 @@ class FakeHoldingRepository implements HoldingRepository {
     portfolioId: string,
     companyId: string
   ): Promise<Holding | null> {
+    this.getByCompanyIdCallCount++;
     return (
       this.rows.find(
         (row) =>
@@ -147,24 +150,41 @@ class FakeHoldingRepository implements HoldingRepository {
 class FakeAtomicTransactionRepository {
   public readonly rows: Transaction[] = [];
 
-  private failNextWrite: Error | null = null;
+  private pendingFailures: Error[] = [];
+  private concurrentInterference: (() => void) | null = null;
 
   constructor(
     private readonly portfolioRows: Portfolio[],
     private readonly holdingRows: Holding[]
   ) {}
 
-  /** Arms the next record* call to fail before any mutation is applied — simulates a crash mid-operation. */
+  /** Arms the next record* call to fail before any mutation is applied — simulates a crash mid-operation. Queues if called more than once. */
   simulateFailureOnNextWrite(error: Error): void {
-    this.failNextWrite = error;
+    this.pendingFailures.push(error);
+  }
+
+  /**
+   * Simulates a genuine lost-update race (ADR 0025), not just a generic
+   * injected failure: the next record* call applies `mutate` directly to
+   * the shared holding rows — as if a concurrent request's write had just
+   * committed — immediately before rejecting *this* call's write as stale.
+   * Reproduces the exact sequence TradingService's retry loop must handle:
+   * a read, then a concurrent change, then a rejected write based on the
+   * now-stale read.
+   */
+  simulateConcurrentWriteBeforeNextCall(mutate: () => void): void {
+    this.concurrentInterference = mutate;
   }
 
   private maybeFail(): void {
-    if (this.failNextWrite) {
-      const error = this.failNextWrite;
-      this.failNextWrite = null;
-      throw error;
+    if (this.concurrentInterference) {
+      const mutate = this.concurrentInterference;
+      this.concurrentInterference = null;
+      mutate();
+      throw new ConcurrentModificationError("Holding");
     }
+    const next = this.pendingFailures.shift();
+    if (next) throw next;
   }
 
   private applyCashDelta(ownerId: string, portfolioId: string, delta: number): void {
@@ -593,5 +613,192 @@ describe("TradingService — atomicity under a mid-operation failure", () => {
     await service.recordCashAdjustment(OWNER, portfolio.id, { amount: 500, occurredAt }, "corr-2");
     const updatedPortfolio = await portfolios.getById(OWNER, portfolio.id);
     expect(updatedPortfolio?.cash).toBe(1_500);
+  });
+});
+
+/**
+ * Phase 2 Architecture Review finding 4.2 (lost-update race), closed per
+ * ADR 0025: optimistic concurrency with a bounded retry. These tests prove
+ * the retry loop actually re-reads and recomputes from fresh data on each
+ * attempt — not just that it retries at all — and that it gives up cleanly
+ * once genuinely exhausted rather than retrying forever.
+ */
+describe("TradingService — optimistic concurrency retry (ADR 0025)", () => {
+  it("recordBuy retries with a fresh read after losing a race, and the result reflects the concurrent write", async () => {
+    const { service, portfolio, holdings, transactions } = buildService(10_000);
+    await service.recordBuy(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 20, occurredAt },
+      "corr-1"
+    );
+
+    // Simulate a genuine race: a concurrent buy of 5 @ 30 commits between
+    // this call's read and its write attempt, so its first write is
+    // rejected as stale.
+    transactions.simulateConcurrentWriteBeforeNextCall(() => {
+      const index = holdings.rows.findIndex(
+        (row) => row.ownerId === OWNER && row.companyId === COMPANY_ID
+      );
+      holdings.rows[index] = {
+        ...holdings.rows[index],
+        quantity: 15, // 10 + 5
+        averageCost: (10 * 20 + 5 * 30) / 15,
+      };
+    });
+
+    await service.recordBuy(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 3, pricePerUnit: 40, occurredAt },
+      "corr-2"
+    );
+
+    const holding = await holdings.getByCompanyId(OWNER, portfolio.id, COMPANY_ID);
+    // If the retry had reused the FIRST (stale, pre-race) read of 10 @ 20,
+    // this would be 13 @ (10*20+3*40)/13 ≈ 24.6. Because it re-reads after
+    // the conflict, it instead blends from the concurrently-written 15 @
+    // 25.33 state.
+    expect(holding?.quantity).toBe(18); // 15 (post-race) + 3 (this call)
+    expect(holding?.averageCost).toBeCloseTo((15 * ((10 * 20 + 5 * 30) / 15) + 3 * 40) / 18, 5);
+  });
+
+  it("recordBuy gives up after the retry budget is exhausted and surfaces the conflict", async () => {
+    const { service, portfolio, holdings, transactions } = buildService(10_000);
+    await service.recordBuy(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 20, occurredAt },
+      "corr-1"
+    );
+
+    // Arm more conflicts than the retry budget allows.
+    transactions.simulateFailureOnNextWrite(new ConcurrentModificationError("Holding"));
+    transactions.simulateFailureOnNextWrite(new ConcurrentModificationError("Holding"));
+    transactions.simulateFailureOnNextWrite(new ConcurrentModificationError("Holding"));
+
+    const readsBefore = holdings.getByCompanyIdCallCount;
+
+    await expect(
+      service.recordBuy(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 1, pricePerUnit: 20, occurredAt },
+        "corr-2"
+      )
+    ).rejects.toBeInstanceOf(ConcurrentModificationError);
+
+    // Exactly 3 attempts, each with its own fresh read — not unbounded, not
+    // a single silent failure either.
+    expect(holdings.getByCompanyIdCallCount - readsBefore).toBe(3);
+  });
+
+  it("recordBuy succeeds without retrying at all when there is no conflict", async () => {
+    const { service, portfolio, holdings } = buildService(10_000);
+    const readsBefore = holdings.getByCompanyIdCallCount;
+
+    await service.recordBuy(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 5, pricePerUnit: 20, occurredAt },
+      "corr-1"
+    );
+
+    expect(holdings.getByCompanyIdCallCount - readsBefore).toBe(1);
+  });
+
+  it("recordSell retries with a fresh read after losing a race, and the result reflects the concurrent write", async () => {
+    const { service, portfolio, holdings, transactions } = buildService(10_000);
+    await service.recordBuy(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 20, occurredAt },
+      "corr-1"
+    );
+
+    // Simulate a concurrent sell of 2 shares landing first.
+    transactions.simulateConcurrentWriteBeforeNextCall(() => {
+      const index = holdings.rows.findIndex(
+        (row) => row.ownerId === OWNER && row.companyId === COMPANY_ID
+      );
+      holdings.rows[index] = { ...holdings.rows[index], quantity: 8 }; // 10 - 2
+    });
+
+    const result = await service.recordSell(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 3, pricePerUnit: 25, occurredAt },
+      "corr-2"
+    );
+
+    expect(result.transaction.realisedGain).toBe(15); // 3 * (25 - 20), average cost unaffected by the concurrent sell
+    const holding = await holdings.getByCompanyId(OWNER, portfolio.id, COMPANY_ID);
+    expect(holding?.quantity).toBe(5); // 8 (post-race) - 3 (this call)
+  });
+
+  it("recordSell re-validates sufficiency against fresh data on each retry", async () => {
+    const { service, portfolio, holdings, transactions } = buildService(10_000);
+    await service.recordBuy(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 20, occurredAt },
+      "corr-1"
+    );
+
+    // A concurrent sell drains the holding to below what THIS call is
+    // trying to sell — the retry must catch this as a fresh
+    // insufficient-holding error, not blindly retry the original write.
+    transactions.simulateConcurrentWriteBeforeNextCall(() => {
+      const index = holdings.rows.findIndex(
+        (row) => row.ownerId === OWNER && row.companyId === COMPANY_ID
+      );
+      holdings.rows[index] = { ...holdings.rows[index], quantity: 2 };
+    });
+
+    await expect(
+      service.recordSell(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 5, pricePerUnit: 25, occurredAt },
+        "corr-2"
+      )
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("recordSell gives up after the retry budget is exhausted and surfaces the conflict", async () => {
+    const { service, portfolio, transactions } = buildService(10_000);
+    await service.recordBuy(
+      OWNER,
+      portfolio.id,
+      { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 20, occurredAt },
+      "corr-1"
+    );
+
+    transactions.simulateFailureOnNextWrite(new ConcurrentModificationError("Holding"));
+    transactions.simulateFailureOnNextWrite(new ConcurrentModificationError("Holding"));
+    transactions.simulateFailureOnNextWrite(new ConcurrentModificationError("Holding"));
+
+    await expect(
+      service.recordSell(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 1, pricePerUnit: 25, occurredAt },
+        "corr-2"
+      )
+    ).rejects.toBeInstanceOf(ConcurrentModificationError);
+  });
+
+  it("a non-concurrency error from the write is never retried", async () => {
+    const { service, portfolio, transactions } = buildService(10_000);
+    transactions.simulateFailureOnNextWrite(new Error("unrelated database error"));
+
+    await expect(
+      service.recordBuy(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 5, pricePerUnit: 20, occurredAt },
+        "corr-1"
+      )
+    ).rejects.toThrow("unrelated database error");
   });
 });
