@@ -1,0 +1,14 @@
+allowBuilds:
+  sharp: false
+  unrs-resolver: false
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver
+
+# Forces every resolution of postcss (including the copy bundled
+# transitively inside next@16.2.10 itself) to a patched version — see
+# GHSA-qx2v-qp2m-jg93 (XSS via unescaped </style> in CSS stringify output,
+# fixed in postcss >=8.5.10). docs/implementation/foundation.md records
+# this as part of the Foundation validation pass.
+overrides:
+  postcss: "^8.5.10"
