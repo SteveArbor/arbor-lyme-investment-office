@@ -1,20 +1,49 @@
-import type { Transaction, TransactionType } from "./model";
+import type { Transaction } from "./model";
 
-export interface CreateTransactionData {
+export interface RecordBuyData {
   portfolioId: string;
-  companyId: string | null;
-  type: TransactionType;
-  quantity: number | null;
-  pricePerUnit: number | null;
+  companyId: string;
+  quantity: number;
+  pricePerUnit: number;
+  occurredAt: string;
+  notes: string | null;
+  newHoldingQuantity: number;
+  newHoldingAverageCost: number;
+}
+
+export interface RecordSellData extends RecordBuyData {
+  realisedGain: number;
+}
+
+export interface RecordDividendData {
+  portfolioId: string;
+  companyId: string;
   amount: number;
-  realisedGain: number | null;
   occurredAt: string;
   notes: string | null;
 }
 
-/** Interface only — implemented in infrastructure/database. Append-only: no update or delete. */
+export interface RecordCashAdjustmentData {
+  portfolioId: string;
+  amount: number;
+  occurredAt: string;
+  notes: string | null;
+}
+
+/**
+ * Interface only — implemented in infrastructure/database. Every record*
+ * method performs its ledger insert, holding update, and portfolio cash
+ * update as a single atomic database operation (Phase 2 Architecture
+ * Review finding 4.1 — see the Postgres functions in
+ * supabase/migrations/20260719000014_atomic_transaction_functions.sql) —
+ * never as separate calls a caller could partially apply. Append-only for
+ * the ledger row: no update or delete.
+ */
 export interface TransactionRepository {
-  create(ownerId: string, data: CreateTransactionData): Promise<Transaction>;
+  recordBuy(ownerId: string, data: RecordBuyData): Promise<Transaction>;
+  recordSell(ownerId: string, data: RecordSellData): Promise<Transaction>;
+  recordDividend(ownerId: string, data: RecordDividendData): Promise<Transaction>;
+  recordCashAdjustment(ownerId: string, data: RecordCashAdjustmentData): Promise<Transaction>;
   listByPortfolioId(ownerId: string, portfolioId: string): Promise<Transaction[]>;
   listByCompanyId(ownerId: string, portfolioId: string, companyId: string): Promise<Transaction[]>;
 }

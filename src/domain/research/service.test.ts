@@ -28,6 +28,12 @@ class FakeResearchRepository implements ResearchRepository {
     return null;
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<ResearchNote[]> {
+    return [...this.rows.values()].filter(
+      (row) => row.ownerId === ownerId && companyIds.includes(row.companyId)
+    );
+  }
+
   async create(ownerId: string, input: ResearchInput): Promise<ResearchNote> {
     const now = new Date().toISOString();
     const note: ResearchNote = {

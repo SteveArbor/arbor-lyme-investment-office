@@ -41,6 +41,11 @@ export class ThesisService {
     return this.repository.create(ownerId, companyId);
   }
 
+  /** Batch read for multi-company views — never creates rows as a side effect. */
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Thesis[]> {
+    return this.repository.listByCompanyIds(ownerId, companyIds);
+  }
+
   async updateStatements(
     ownerId: string,
     companyId: string,

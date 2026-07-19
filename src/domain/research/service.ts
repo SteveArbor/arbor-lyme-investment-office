@@ -37,6 +37,11 @@ export class ResearchService {
     return this.repository.create(ownerId, { companyId, ...EMPTY_RESEARCH_SECTIONS });
   }
 
+  /** Batch read for multi-company views — never creates rows as a side effect. */
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<ResearchNote[]> {
+    return this.repository.listByCompanyIds(ownerId, companyIds);
+  }
+
   async updateResearch(
     ownerId: string,
     companyId: string,

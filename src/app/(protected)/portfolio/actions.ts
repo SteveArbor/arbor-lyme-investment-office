@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { composeAppServices } from "@/application/services";
 import { ValidationError } from "@/domain/shared";
@@ -30,8 +30,10 @@ export async function createPortfolioAction(
     cash: Number(formData.get("cash")),
   };
 
+  let portfolioId: string;
   try {
-    await portfolioService.createPortfolio(user.id, input, randomUUID());
+    const { portfolio } = await portfolioService.createPortfolio(user.id, input, randomUUID());
+    portfolioId = portfolio.id;
   } catch (error) {
     if (error instanceof ValidationError) {
       return {
@@ -42,6 +44,5 @@ export async function createPortfolioAction(
     return { error: "Something went wrong. Please try again.", success: false };
   }
 
-  revalidatePath("/portfolio");
-  return { error: null, success: true };
+  redirect(`/portfolio/${portfolioId}`);
 }

@@ -26,4 +26,10 @@ export interface DecisionRepository {
   create(ownerId: string, data: CreateRecommendationData): Promise<DecisionRecommendation>;
   getLatestByCompanyId(ownerId: string, companyId: string): Promise<DecisionRecommendation | null>;
   listByCompanyId(ownerId: string, companyId: string): Promise<DecisionRecommendation[]>;
+  /**
+   * Batch read for multi-company views: one row per company (the most
+   * recent rating), not the full history — one query instead of one
+   * getLatestByCompanyId call per company.
+   */
+  listLatestByCompanyIds(ownerId: string, companyIds: string[]): Promise<DecisionRecommendation[]>;
 }

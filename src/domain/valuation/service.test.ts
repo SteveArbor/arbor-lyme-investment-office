@@ -23,6 +23,12 @@ class FakeValuationRepository implements ValuationRepository {
     return null;
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Valuation[]> {
+    return [...this.rows.values()].filter(
+      (row) => row.ownerId === ownerId && companyIds.includes(row.companyId)
+    );
+  }
+
   async create(ownerId: string, companyId: string, data: ValuationWriteData): Promise<Valuation> {
     const now = new Date().toISOString();
     const valuation: Valuation = {

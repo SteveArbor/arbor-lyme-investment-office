@@ -37,6 +37,18 @@ export class SupabaseThesisRepository implements ThesisRepository {
     return data ? toDomain(data) : null;
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Thesis[]> {
+    if (companyIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from("theses")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .in("company_id", companyIds);
+
+    if (error) throw error;
+    return (data ?? []).map(toDomain);
+  }
+
   async create(ownerId: string, companyId: string): Promise<Thesis> {
     const { data, error } = await this.client
       .from("theses")

@@ -93,6 +93,11 @@ export class ValuationService {
     return this.repository.create(ownerId, companyId, data);
   }
 
+  /** Batch read for multi-company views — never creates rows as a side effect. */
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Valuation[]> {
+    return this.repository.listByCompanyIds(ownerId, companyIds);
+  }
+
   async updateValuation(
     ownerId: string,
     companyId: string,

@@ -28,11 +28,12 @@ export interface TransactionRecordedPayload {
 /**
  * The transaction ledger's business logic (docs/development-roadmap.md
  * Phase 2, item 7). Framework-independent. Trading is downstream of
- * Portfolio: it is the intended writer of Holding position and Portfolio
- * cash (see the comment on HoldingRepository.upsertPosition) — this is a
- * genuine upstream/downstream bounded-context relationship, not a
- * layering violation, the same way research/thesis/valuation all share
- * `domain/shared`'s VersionHistoryRepository.
+ * Portfolio: it still reads `HoldingRepository`/`PortfolioRepository` to
+ * validate (sufficient cash, sufficient holding to sell) and to compute
+ * the resulting average cost/realised gain via the pure functions below —
+ * but the actual write is a single atomic call into
+ * `TransactionRepository` (Phase 2 Architecture Review finding 4.1), never
+ * three separate writes this service could partially apply.
  */
 export class TradingService {
   constructor(
@@ -75,23 +76,16 @@ export class TradingService {
       pricePerUnit
     );
 
-    const transaction = await this.transactions.create(ownerId, {
+    const transaction = await this.transactions.recordBuy(ownerId, {
       portfolioId,
       companyId,
-      type: "buy",
       quantity,
       pricePerUnit,
-      amount: -cost,
-      realisedGain: null,
       occurredAt,
       notes: notes ?? null,
+      newHoldingQuantity: newQuantity,
+      newHoldingAverageCost: newAverageCost,
     });
-
-    await this.holdings.upsertPosition(ownerId, portfolioId, companyId, {
-      quantity: newQuantity,
-      averageCost: newAverageCost,
-    });
-    await this.portfolios.update(ownerId, portfolioId, { cash: portfolio.cash - cost });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
   }
@@ -121,27 +115,20 @@ export class TradingService {
       });
     }
 
-    const proceeds = quantity * pricePerUnit;
     const realisedGain = calculateRealisedGain(quantity, pricePerUnit, existing.averageCost);
     const newQuantity = existing.quantity - quantity;
 
-    const transaction = await this.transactions.create(ownerId, {
+    const transaction = await this.transactions.recordSell(ownerId, {
       portfolioId,
       companyId,
-      type: "sell",
       quantity,
       pricePerUnit,
-      amount: proceeds,
-      realisedGain,
       occurredAt,
       notes: notes ?? null,
+      newHoldingQuantity: newQuantity,
+      newHoldingAverageCost: newQuantity > 0 ? existing.averageCost : 0,
+      realisedGain,
     });
-
-    await this.holdings.upsertPosition(ownerId, portfolioId, companyId, {
-      quantity: newQuantity,
-      averageCost: newQuantity > 0 ? existing.averageCost : 0,
-    });
-    await this.portfolios.update(ownerId, portfolioId, { cash: portfolio.cash + proceeds });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
   }
@@ -164,19 +151,13 @@ export class TradingService {
     const portfolio = await this.portfolios.getById(ownerId, portfolioId);
     if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
 
-    const transaction = await this.transactions.create(ownerId, {
+    const transaction = await this.transactions.recordDividend(ownerId, {
       portfolioId,
       companyId,
-      type: "dividend",
-      quantity: null,
-      pricePerUnit: null,
       amount,
-      realisedGain: null,
       occurredAt,
       notes: notes ?? null,
     });
-
-    await this.portfolios.update(ownerId, portfolioId, { cash: portfolio.cash + amount });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
   }
@@ -205,19 +186,12 @@ export class TradingService {
       });
     }
 
-    const transaction = await this.transactions.create(ownerId, {
+    const transaction = await this.transactions.recordCashAdjustment(ownerId, {
       portfolioId,
-      companyId: null,
-      type: "cash_adjustment",
-      quantity: null,
-      pricePerUnit: null,
       amount,
-      realisedGain: null,
       occurredAt,
       notes: notes ?? null,
     });
-
-    await this.portfolios.update(ownerId, portfolioId, { cash: portfolio.cash + amount });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
   }

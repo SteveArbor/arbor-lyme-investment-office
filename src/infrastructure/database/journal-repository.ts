@@ -62,12 +62,36 @@ export class SupabaseJournalRepository implements JournalRepository {
     return (data ?? []).map(toDomain);
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<JournalEntry[]> {
+    if (companyIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from("journal_entries")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .in("company_id", companyIds)
+      .order("purchase_date", { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []).map(toDomain);
+  }
+
   async listByPortfolioId(ownerId: string, portfolioId: string): Promise<JournalEntry[]> {
     const { data, error } = await this.client
       .from("journal_entries")
       .select("*")
       .eq("owner_id", ownerId)
       .eq("portfolio_id", portfolioId)
+      .order("purchase_date", { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []).map(toDomain);
+  }
+
+  async listByOwnerId(ownerId: string): Promise<JournalEntry[]> {
+    const { data, error } = await this.client
+      .from("journal_entries")
+      .select("*")
+      .eq("owner_id", ownerId)
       .order("purchase_date", { ascending: false });
 
     if (error) throw error;

@@ -31,6 +31,11 @@ async function requireUserAndServices() {
   return { user, services: composeAppServices(supabase) };
 }
 
+function revalidatePortfolioPaths(portfolioId: string) {
+  revalidatePath(`/portfolio/${portfolioId}/transactions`);
+  revalidatePath(`/portfolio/${portfolioId}`);
+}
+
 export async function recordBuyAction(
   portfolioId: string,
   _prevState: ActionFormState,
@@ -53,8 +58,7 @@ export async function recordBuyAction(
     return fieldError(error);
   }
 
-  revalidatePath("/portfolio/transactions");
-  revalidatePath("/portfolio");
+  revalidatePortfolioPaths(portfolioId);
   return { error: null, success: true };
 }
 
@@ -80,8 +84,7 @@ export async function recordSellAction(
     return fieldError(error);
   }
 
-  revalidatePath("/portfolio/transactions");
-  revalidatePath("/portfolio");
+  revalidatePortfolioPaths(portfolioId);
   return { error: null, success: true };
 }
 
@@ -106,8 +109,7 @@ export async function recordDividendAction(
     return fieldError(error);
   }
 
-  revalidatePath("/portfolio/transactions");
-  revalidatePath("/portfolio");
+  revalidatePortfolioPaths(portfolioId);
   return { error: null, success: true };
 }
 
@@ -131,7 +133,6 @@ export async function recordCashAdjustmentAction(
     return fieldError(error);
   }
 
-  revalidatePath("/portfolio/transactions");
-  revalidatePath("/portfolio");
+  revalidatePortfolioPaths(portfolioId);
   return { error: null, success: true };
 }

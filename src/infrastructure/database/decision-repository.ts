@@ -80,4 +80,30 @@ export class SupabaseDecisionRepository implements DecisionRepository {
     if (error) throw error;
     return (data ?? []).map(toDomain);
   }
+
+  async listLatestByCompanyIds(
+    ownerId: string,
+    companyIds: string[]
+  ): Promise<DecisionRecommendation[]> {
+    if (companyIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from("decision_recommendations")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .in("company_id", companyIds)
+      .order("generated_at", { ascending: false });
+
+    if (error) throw error;
+
+    // One query, ordered newest-first; keep only the first (= latest) row
+    // per company rather than issuing getLatestByCompanyId once per
+    // company (Phase 2 Architecture Review finding 4.5).
+    const latestByCompany = new Map<string, DecisionRecommendation>();
+    for (const row of data ?? []) {
+      if (!latestByCompany.has(row.company_id)) {
+        latestByCompany.set(row.company_id, toDomain(row));
+      }
+    }
+    return [...latestByCompany.values()];
+  }
 }

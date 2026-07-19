@@ -54,6 +54,18 @@ export class SupabaseValuationRepository implements ValuationRepository {
     return data ? toDomain(data) : null;
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Valuation[]> {
+    if (companyIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from("valuations")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .in("company_id", companyIds);
+
+    if (error) throw error;
+    return (data ?? []).map(toDomain);
+  }
+
   async create(ownerId: string, companyId: string, data: ValuationWriteData): Promise<Valuation> {
     const { data: row, error } = await this.client
       .from("valuations")

@@ -12,6 +12,21 @@
  * removed — do not hand-edit it after that point.
  */
 
+type TransactionRow = {
+  id: string;
+  owner_id: string;
+  portfolio_id: string;
+  company_id: string | null;
+  type: "buy" | "sell" | "dividend" | "cash_adjustment";
+  quantity: string | null;
+  price_per_unit: string | null;
+  amount: string;
+  realised_gain: string | null;
+  occurred_at: string;
+  notes: string | null;
+  created_at: string;
+};
+
 export interface Database {
   public: {
     Tables: {
@@ -337,20 +352,7 @@ export interface Database {
         Relationships: [];
       };
       transactions: {
-        Row: {
-          id: string;
-          owner_id: string;
-          portfolio_id: string;
-          company_id: string | null;
-          type: "buy" | "sell" | "dividend" | "cash_adjustment";
-          quantity: string | null;
-          price_per_unit: string | null;
-          amount: string;
-          realised_gain: string | null;
-          occurred_at: string;
-          notes: string | null;
-          created_at: string;
-        };
+        Row: TransactionRow;
         Insert: {
           owner_id: string;
           portfolio_id: string;
@@ -413,7 +415,58 @@ export interface Database {
       };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      record_buy_transaction: {
+        Args: {
+          p_owner_id: string;
+          p_portfolio_id: string;
+          p_company_id: string;
+          p_quantity: number;
+          p_price_per_unit: number;
+          p_occurred_at: string;
+          p_notes: string | null;
+          p_new_holding_quantity: number;
+          p_new_holding_average_cost: number;
+        };
+        Returns: TransactionRow;
+      };
+      record_sell_transaction: {
+        Args: {
+          p_owner_id: string;
+          p_portfolio_id: string;
+          p_company_id: string;
+          p_quantity: number;
+          p_price_per_unit: number;
+          p_occurred_at: string;
+          p_notes: string | null;
+          p_new_holding_quantity: number;
+          p_new_holding_average_cost: number;
+          p_realised_gain: number;
+        };
+        Returns: TransactionRow;
+      };
+      record_dividend_transaction: {
+        Args: {
+          p_owner_id: string;
+          p_portfolio_id: string;
+          p_company_id: string;
+          p_amount: number;
+          p_occurred_at: string;
+          p_notes: string | null;
+        };
+        Returns: TransactionRow;
+      };
+      record_cash_adjustment_transaction: {
+        Args: {
+          p_owner_id: string;
+          p_portfolio_id: string;
+          p_amount: number;
+          p_occurred_at: string;
+          p_notes: string | null;
+        };
+        Returns: TransactionRow;
+      };
+    };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };

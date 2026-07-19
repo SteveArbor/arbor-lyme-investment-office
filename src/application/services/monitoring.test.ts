@@ -12,10 +12,11 @@ import type { EntityVersion, RecordVersionInput, VersionHistoryRepository } from
 import { type ThesisRepository, ThesisService } from "@/domain/thesis";
 import { type ValuationRepository, ValuationService } from "@/domain/valuation";
 
-import { buildCompanyMonitoringSnapshot } from "./monitoring";
+import { buildCompanyMonitoringSnapshot, buildCompanyMonitoringSnapshots } from "./monitoring";
 
 const OWNER = "user-1";
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const OTHER_COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 
 class FakeVersionHistoryRepository implements VersionHistoryRepository {
   async recordVersion<T>(input: RecordVersionInput<T>): Promise<EntityVersion<T>> {
@@ -67,16 +68,40 @@ function buildResearchService() {
       rows.set(companyId, merged);
       return { ...merged, id: researchId, ownerId: OWNER, createdAt: "now", updatedAt: "now" };
     },
+    async listByCompanyIds(_ownerId, companyIds) {
+      return companyIds
+        .filter((id) => rows.has(id))
+        .map((id) => ({
+          ...rows.get(id)!,
+          id: `research-${id}`,
+          ownerId: OWNER,
+          createdAt: "now",
+          updatedAt: "now",
+        }));
+    },
   };
   return new ResearchService(repo, new FakeVersionHistoryRepository());
 }
 
 function buildThesisService() {
+  const rows = new Map<string, { id: string; companyId: string; overallStatus: string }>();
   const repo: ThesisRepository = {
-    async getByCompanyId() {
-      return null;
+    async getByCompanyId(_ownerId, companyId) {
+      const row = rows.get(companyId);
+      return row
+        ? {
+            id: row.id,
+            ownerId: OWNER,
+            companyId,
+            statements: [],
+            overallStatus: row.overallStatus as never,
+            createdAt: "now",
+            updatedAt: "now",
+          }
+        : null;
     },
     async create(ownerId, companyId) {
+      rows.set(companyId, { id: `thesis-${companyId}`, companyId, overallStatus: "stable" });
       return {
         id: `thesis-${companyId}`,
         ownerId,
@@ -98,16 +123,44 @@ function buildThesisService() {
         updatedAt: "now",
       };
     },
+    async listByCompanyIds(_ownerId, companyIds) {
+      return companyIds
+        .filter((id) => rows.has(id))
+        .map((id) => {
+          const row = rows.get(id)!;
+          return {
+            id: row.id,
+            ownerId: OWNER,
+            companyId: id,
+            statements: [],
+            overallStatus: row.overallStatus as never,
+            createdAt: "now",
+            updatedAt: "now",
+          };
+        });
+    },
   };
   return new ThesisService(repo, new FakeVersionHistoryRepository());
 }
 
 function buildValuationService() {
+  const rows = new Map<string, { id: string; companyId: string; data: unknown }>();
   const repo: ValuationRepository = {
-    async getByCompanyId() {
-      return null;
+    async getByCompanyId(_ownerId, companyId) {
+      const row = rows.get(companyId);
+      return row
+        ? ({
+            id: row.id,
+            ownerId: OWNER,
+            companyId,
+            ...(row.data as object),
+            createdAt: "now",
+            updatedAt: "now",
+          } as never)
+        : null;
     },
     async create(ownerId, companyId, data) {
+      rows.set(companyId, { id: `valuation-${companyId}`, companyId, data });
       return {
         id: `valuation-${companyId}`,
         ownerId,
@@ -127,42 +180,70 @@ function buildValuationService() {
         updatedAt: "now",
       };
     },
+    async listByCompanyIds(_ownerId, companyIds) {
+      return companyIds
+        .filter((id) => rows.has(id))
+        .map((id) => {
+          const row = rows.get(id)!;
+          return {
+            id: row.id,
+            ownerId: OWNER,
+            companyId: id,
+            ...(row.data as object),
+            createdAt: "now",
+            updatedAt: "now",
+          } as never;
+        });
+    },
   };
   return new ValuationService(repo, new FakeVersionHistoryRepository());
 }
 
-function buildDecisionService(seedRating?: { rating: string; expectedReturn: number }) {
+function buildDecisionService(
+  seedRatings?: { companyId: string; rating: string; expectedReturn: number }[]
+) {
+  const seeds = seedRatings ?? [];
+  const toRecommendation = (
+    ownerId: string,
+    seed: { companyId: string; rating: string; expectedReturn: number }
+  ) => ({
+    id: `decision-${seed.companyId}`,
+    ownerId,
+    companyId: seed.companyId,
+    inputs: {
+      businessQuality: 0.8,
+      economicMoat: 0.8,
+      financialStrength: 0.8,
+      capitalAllocation: 0.8,
+      growth: 0.8,
+      riskLevel: 0.2,
+      expectedReturn: seed.expectedReturn,
+      marginOfSafety: 0.3,
+    },
+    qualityScore: 0.8,
+    valuationScore: 0.7,
+    overallScore: 0.76,
+    conviction: 0.8,
+    rating: seed.rating as never,
+    conclusionSource: "deterministic_rules" as const,
+    generatedAt: "now",
+  });
+
   const repo: DecisionRepository = {
     async create() {
       throw new Error("not used");
     },
     async getLatestByCompanyId(ownerId, companyId) {
-      if (!seedRating) return null;
-      return {
-        id: "decision-1",
-        ownerId,
-        companyId,
-        inputs: {
-          businessQuality: 0.8,
-          economicMoat: 0.8,
-          financialStrength: 0.8,
-          capitalAllocation: 0.8,
-          growth: 0.8,
-          riskLevel: 0.2,
-          expectedReturn: seedRating.expectedReturn,
-          marginOfSafety: 0.3,
-        },
-        qualityScore: 0.8,
-        valuationScore: 0.7,
-        overallScore: 0.76,
-        conviction: 0.8,
-        rating: seedRating.rating as never,
-        conclusionSource: "deterministic_rules",
-        generatedAt: "now",
-      };
+      const seed = seeds.find((row) => row.companyId === companyId);
+      return seed ? toRecommendation(ownerId, seed) : null;
     },
     async listByCompanyId() {
       return [];
+    },
+    async listLatestByCompanyIds(ownerId, companyIds) {
+      return seeds
+        .filter((row) => companyIds.includes(row.companyId))
+        .map((seed) => toRecommendation(ownerId, seed));
     },
   };
   return new DecisionService(repo);
@@ -212,38 +293,46 @@ function buildPortfolioService() {
 }
 
 function buildJournalService(openEntry: boolean) {
+  const makeOpenEntry = (ownerId: string, companyId: string) => ({
+    id: "journal-1",
+    ownerId,
+    companyId,
+    portfolioId: "portfolio-1",
+    status: "open" as const,
+    purchaseDate: "now",
+    purchasePrice: 50,
+    fairValueAtPurchase: 75,
+    expectedReturnAtPurchase: 0.2,
+    positionSize: 500,
+    convictionAtPurchase: 0.8,
+    thesisSummary: "test",
+    risks: "test",
+    invalidationConditions: "test",
+    saleDate: null,
+    saleReason: null,
+    lessonsLearned: null,
+    createdAt: "now",
+    updatedAt: "now",
+  });
+
   const repo: JournalRepository = {
     async getById() {
       return null;
     },
     async listByCompanyId(ownerId, companyId) {
       if (!openEntry) return [];
-      return [
-        {
-          id: "journal-1",
-          ownerId,
-          companyId,
-          portfolioId: "portfolio-1",
-          status: "open",
-          purchaseDate: "now",
-          purchasePrice: 50,
-          fairValueAtPurchase: 75,
-          expectedReturnAtPurchase: 0.2,
-          positionSize: 500,
-          convictionAtPurchase: 0.8,
-          thesisSummary: "test",
-          risks: "test",
-          invalidationConditions: "test",
-          saleDate: null,
-          saleReason: null,
-          lessonsLearned: null,
-          createdAt: "now",
-          updatedAt: "now",
-        },
-      ];
+      return [makeOpenEntry(ownerId, companyId)];
     },
     async listByPortfolioId() {
       return [];
+    },
+    async listByCompanyIds(ownerId, companyIds) {
+      if (!openEntry || !companyIds.includes(COMPANY_ID)) return [];
+      return [makeOpenEntry(ownerId, COMPANY_ID)];
+    },
+    async listByOwnerId(ownerId) {
+      if (!openEntry) return [];
+      return [makeOpenEntry(ownerId, COMPANY_ID)];
     },
     async create() {
       throw new Error("not used");
@@ -262,7 +351,9 @@ describe("buildCompanyMonitoringSnapshot", () => {
         researchService: buildResearchService(),
         thesisService: buildThesisService(),
         valuationService: buildValuationService(),
-        decisionService: buildDecisionService({ rating: "buy", expectedReturn: 0.18 }),
+        decisionService: buildDecisionService([
+          { companyId: COMPANY_ID, rating: "buy", expectedReturn: 0.18 },
+        ]),
         portfolioService: buildPortfolioService(),
         journalService: buildJournalService(true),
       },
@@ -343,5 +434,89 @@ describe("buildCompanyMonitoringSnapshot", () => {
       COMPANY_ID
     );
     expect(withoutPortfolio.holding).toBeNull();
+  });
+});
+
+describe("buildCompanyMonitoringSnapshots (batch)", () => {
+  it("returns an empty map for an empty company list without calling any dependency", async () => {
+    const summaries = await buildCompanyMonitoringSnapshots(
+      {
+        researchService: buildResearchService(),
+        thesisService: buildThesisService(),
+        valuationService: buildValuationService(),
+        decisionService: buildDecisionService(),
+        journalService: buildJournalService(false),
+      },
+      OWNER,
+      []
+    );
+    expect(summaries.size).toBe(0);
+  });
+
+  it("represents a company with no research/thesis/valuation/rating as nulls, not fabricated defaults", async () => {
+    const summaries = await buildCompanyMonitoringSnapshots(
+      {
+        researchService: buildResearchService(),
+        thesisService: buildThesisService(),
+        valuationService: buildValuationService(),
+        decisionService: buildDecisionService(),
+        journalService: buildJournalService(false),
+      },
+      OWNER,
+      [COMPANY_ID]
+    );
+
+    const summary = summaries.get(COMPANY_ID);
+    expect(summary?.thesisStatus).toBeNull();
+    expect(summary?.marginOfSafety).toBeNull();
+    expect(summary?.blendedFairValue).toBeNull();
+    expect(summary?.latestRating).toBeNull();
+  });
+
+  it("assembles real data per company from a single batched call to each domain", async () => {
+    const research = buildResearchService();
+    await research.updateResearch(
+      OWNER,
+      COMPANY_ID,
+      { risks: "Regulatory risk." },
+      OWNER,
+      "corr-1"
+    );
+
+    const thesis = buildThesisService();
+    await thesis.getOrCreateThesis(OWNER, COMPANY_ID);
+
+    const valuation = buildValuationService();
+    await valuation.getOrCreateValuation(OWNER, COMPANY_ID);
+
+    const decisionService = buildDecisionService([
+      { companyId: COMPANY_ID, rating: "strong_buy", expectedReturn: 0.22 },
+    ]);
+
+    const summaries = await buildCompanyMonitoringSnapshots(
+      {
+        researchService: research,
+        thesisService: thesis,
+        valuationService: valuation,
+        decisionService,
+        journalService: buildJournalService(true),
+      },
+      OWNER,
+      [COMPANY_ID, OTHER_COMPANY_ID]
+    );
+
+    const withData = summaries.get(COMPANY_ID);
+    expect(withData?.risks).toBe("Regulatory risk.");
+    expect(withData?.thesisStatus).toBe("stable");
+    expect(withData?.marginOfSafety).not.toBeNull();
+    expect(withData?.latestRating).toBe("strong_buy");
+    expect(withData?.expectedReturn).toBe(0.22);
+    expect(withData?.openJournalEntry?.id).toBe("journal-1");
+
+    // The other company has none of the above — represented honestly as nulls.
+    const withoutData = summaries.get(OTHER_COMPANY_ID);
+    expect(withoutData?.thesisStatus).toBeNull();
+    expect(withoutData?.latestRating).toBeNull();
+    expect(withoutData?.openJournalEntry).toBeNull();
   });
 });

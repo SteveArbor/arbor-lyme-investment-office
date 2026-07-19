@@ -23,6 +23,12 @@ class FakeThesisRepository implements ThesisRepository {
     return null;
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<Thesis[]> {
+    return [...this.rows.values()].filter(
+      (row) => row.ownerId === ownerId && companyIds.includes(row.companyId)
+    );
+  }
+
   async create(ownerId: string, companyId: string): Promise<Thesis> {
     const now = new Date().toISOString();
     const thesis: Thesis = {

@@ -61,6 +61,18 @@ export class SupabaseResearchRepository implements ResearchRepository {
     return data ? toDomain(data) : null;
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<ResearchNote[]> {
+    if (companyIds.length === 0) return [];
+    const { data, error } = await this.client
+      .from("research_notes")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .in("company_id", companyIds);
+
+    if (error) throw error;
+    return (data ?? []).map(toDomain);
+  }
+
   async create(ownerId: string, input: ResearchInput): Promise<ResearchNote> {
     const { data, error } = await this.client
       .from("research_notes")

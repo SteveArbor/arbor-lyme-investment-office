@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type {
-  CreateTransactionData,
+  RecordBuyData,
+  RecordCashAdjustmentData,
+  RecordDividendData,
+  RecordSellData,
   Transaction,
   TransactionRepository,
   TransactionType,
@@ -27,26 +30,76 @@ function toDomain(row: TransactionRow): Transaction {
   };
 }
 
+/**
+ * Every record* method calls a single Postgres function that performs the
+ * ledger insert, holding update, and portfolio cash update atomically —
+ * see supabase/migrations/20260719000014_atomic_transaction_functions.sql
+ * and Phase 2 Architecture Review finding 4.1. There is no path here that
+ * issues three separate writes.
+ */
 export class SupabaseTransactionRepository implements TransactionRepository {
   constructor(private readonly client: SupabaseClient<Database>) {}
 
-  async create(ownerId: string, data: CreateTransactionData): Promise<Transaction> {
-    const { data: row, error } = await this.client
-      .from("transactions")
-      .insert({
-        owner_id: ownerId,
-        portfolio_id: data.portfolioId,
-        company_id: data.companyId,
-        type: data.type,
-        quantity: data.quantity,
-        price_per_unit: data.pricePerUnit,
-        amount: data.amount,
-        realised_gain: data.realisedGain,
-        occurred_at: data.occurredAt,
-        notes: data.notes,
-      })
-      .select("*")
-      .single();
+  async recordBuy(ownerId: string, data: RecordBuyData): Promise<Transaction> {
+    const { data: row, error } = await this.client.rpc("record_buy_transaction", {
+      p_owner_id: ownerId,
+      p_portfolio_id: data.portfolioId,
+      p_company_id: data.companyId,
+      p_quantity: data.quantity,
+      p_price_per_unit: data.pricePerUnit,
+      p_occurred_at: data.occurredAt,
+      p_notes: data.notes,
+      p_new_holding_quantity: data.newHoldingQuantity,
+      p_new_holding_average_cost: data.newHoldingAverageCost,
+    });
+
+    if (error) throw error;
+    return toDomain(row);
+  }
+
+  async recordSell(ownerId: string, data: RecordSellData): Promise<Transaction> {
+    const { data: row, error } = await this.client.rpc("record_sell_transaction", {
+      p_owner_id: ownerId,
+      p_portfolio_id: data.portfolioId,
+      p_company_id: data.companyId,
+      p_quantity: data.quantity,
+      p_price_per_unit: data.pricePerUnit,
+      p_occurred_at: data.occurredAt,
+      p_notes: data.notes,
+      p_new_holding_quantity: data.newHoldingQuantity,
+      p_new_holding_average_cost: data.newHoldingAverageCost,
+      p_realised_gain: data.realisedGain,
+    });
+
+    if (error) throw error;
+    return toDomain(row);
+  }
+
+  async recordDividend(ownerId: string, data: RecordDividendData): Promise<Transaction> {
+    const { data: row, error } = await this.client.rpc("record_dividend_transaction", {
+      p_owner_id: ownerId,
+      p_portfolio_id: data.portfolioId,
+      p_company_id: data.companyId,
+      p_amount: data.amount,
+      p_occurred_at: data.occurredAt,
+      p_notes: data.notes,
+    });
+
+    if (error) throw error;
+    return toDomain(row);
+  }
+
+  async recordCashAdjustment(
+    ownerId: string,
+    data: RecordCashAdjustmentData
+  ): Promise<Transaction> {
+    const { data: row, error } = await this.client.rpc("record_cash_adjustment_transaction", {
+      p_owner_id: ownerId,
+      p_portfolio_id: data.portfolioId,
+      p_amount: data.amount,
+      p_occurred_at: data.occurredAt,
+      p_notes: data.notes,
+    });
 
     if (error) throw error;
     return toDomain(row);

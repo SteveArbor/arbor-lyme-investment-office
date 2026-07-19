@@ -35,6 +35,19 @@ class FakeDecisionRepository implements DecisionRepository {
   async listByCompanyId(ownerId: string, companyId: string): Promise<DecisionRecommendation[]> {
     return this.rows.filter((row) => row.ownerId === ownerId && row.companyId === companyId);
   }
+
+  async listLatestByCompanyIds(
+    ownerId: string,
+    companyIds: string[]
+  ): Promise<DecisionRecommendation[]> {
+    const latestByCompany = new Map<string, DecisionRecommendation>();
+    for (const row of this.rows) {
+      if (row.ownerId === ownerId && companyIds.includes(row.companyId)) {
+        latestByCompany.set(row.companyId, row);
+      }
+    }
+    return [...latestByCompany.values()];
+  }
 }
 
 const validInputs = {

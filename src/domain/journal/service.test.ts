@@ -23,6 +23,14 @@ class FakeJournalRepository implements JournalRepository {
     return this.rows.filter((row) => row.ownerId === ownerId && row.portfolioId === portfolioId);
   }
 
+  async listByCompanyIds(ownerId: string, companyIds: string[]): Promise<JournalEntry[]> {
+    return this.rows.filter((row) => row.ownerId === ownerId && companyIds.includes(row.companyId));
+  }
+
+  async listByOwnerId(ownerId: string): Promise<JournalEntry[]> {
+    return this.rows.filter((row) => row.ownerId === ownerId);
+  }
+
   async create(ownerId: string, input: JournalEntryOpenInput): Promise<JournalEntry> {
     const now = new Date().toISOString();
     const entry: JournalEntry = {

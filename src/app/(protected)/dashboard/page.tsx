@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { buildCompanyMonitoringSnapshot, composeAppServices } from "@/application/services";
+import { buildCompanyMonitoringSnapshots, composeAppServices } from "@/application/services";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
@@ -19,8 +19,10 @@ export default async function DashboardPage() {
 
   const services = composeAppServices(supabase);
   const companies = await services.companyService.listCompanies(user!.id);
-  const snapshots = await Promise.all(
-    companies.map((company) => buildCompanyMonitoringSnapshot(services, user!.id, company.id))
+  const snapshots = await buildCompanyMonitoringSnapshots(
+    services,
+    user!.id,
+    companies.map((company) => company.id)
   );
 
   return (
@@ -58,8 +60,8 @@ export default async function DashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {companies.map((company, index) => {
-                const snapshot = snapshots[index];
+              {companies.map((company) => {
+                const snapshot = snapshots.get(company.id);
                 return (
                   <tr key={company.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
                     <td className="px-4 py-3">
@@ -71,16 +73,21 @@ export default async function DashboardPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {THESIS_STATUS_LABELS[snapshot.thesisStatus]}
+                      {snapshot?.thesisStatus
+                        ? THESIS_STATUS_LABELS[snapshot.thesisStatus]
+                        : "No thesis yet"}
                     </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {snapshot.blendedFairValue.toFixed(2)}
+                      {snapshot?.blendedFairValue !== null &&
+                      snapshot?.blendedFairValue !== undefined
+                        ? snapshot.blendedFairValue.toFixed(2)
+                        : "Not yet valued"}
                     </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {snapshot.latestRating ? RATING_LABELS[snapshot.latestRating] : "Not rated"}
+                      {snapshot?.latestRating ? RATING_LABELS[snapshot.latestRating] : "Not rated"}
                     </td>
                     <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {snapshot.openJournalEntry ? "Yes" : ""}
+                      {snapshot?.openJournalEntry ? "Yes" : ""}
                     </td>
                   </tr>
                 );

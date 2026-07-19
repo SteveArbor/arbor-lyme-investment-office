@@ -41,8 +41,18 @@ export class JournalService {
     return this.repository.listByCompanyId(ownerId, companyId);
   }
 
+  /** Batch read for multi-company views (e.g. the Monitoring Dashboard). */
+  async listEntriesForCompanies(ownerId: string, companyIds: string[]): Promise<JournalEntry[]> {
+    return this.repository.listByCompanyIds(ownerId, companyIds);
+  }
+
   async listEntriesForPortfolio(ownerId: string, portfolioId: string): Promise<JournalEntry[]> {
     return this.repository.listByPortfolioId(ownerId, portfolioId);
+  }
+
+  /** Every entry across every company/portfolio — the cross-company Journal view. */
+  async listAllEntries(ownerId: string): Promise<JournalEntry[]> {
+    return this.repository.listByOwnerId(ownerId);
   }
 
   async openEntry(

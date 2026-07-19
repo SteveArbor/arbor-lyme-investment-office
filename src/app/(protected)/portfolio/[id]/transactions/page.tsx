@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
 
 import { composeAppServices } from "@/application/services";
 import { cardClasses } from "@/components/ui/form-styles";
+import { NotFoundError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
 import { TransactionForms } from "./transaction-forms";
@@ -10,38 +13,40 @@ export const metadata: Metadata = {
   title: "Transactions — Arbor Lyme Capital",
 };
 
-export default async function TransactionsPage() {
+export default async function TransactionsPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   const { portfolioService, tradingService, companyService } = composeAppServices(supabase);
-  const portfolios = await portfolioService.listPortfolios(user!.id);
 
-  if (portfolios.length === 0) {
-    return (
-      <main id="main-content" className="mx-auto max-w-3xl px-4 py-8">
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-          Transactions
-        </h1>
-        <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-          Create a portfolio first.
-        </p>
-      </main>
-    );
+  let portfolio;
+  try {
+    portfolio = await portfolioService.getPortfolio(user!.id, id);
+  } catch (error) {
+    if (error instanceof NotFoundError) notFound();
+    throw error;
   }
 
-  const portfolio = portfolios[0];
   const [transactions, companies] = await Promise.all([
-    tradingService.listTransactions(user!.id, portfolio.id),
+    tradingService.listTransactions(user!.id, id),
     companyService.listCompanies(user!.id),
   ]);
   const companyNameById = new Map(companies.map((company) => [company.id, company.name]));
 
   return (
     <main id="main-content" className="mx-auto max-w-3xl px-4 py-8">
-      <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+      <p className="text-sm">
+        <Link
+          href={`/portfolio/${id}`}
+          className="text-neutral-600 hover:underline dark:text-neutral-400"
+        >
+          ← {portfolio.name}
+        </Link>
+      </p>
+      <h1 className="mt-2 text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
         Transactions — {portfolio.name}
       </h1>
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
@@ -50,7 +55,7 @@ export default async function TransactionsPage() {
       </p>
 
       <div className="mt-6">
-        <TransactionForms portfolioId={portfolio.id} companies={companies} />
+        <TransactionForms portfolioId={id} companies={companies} />
       </div>
 
       <h2 className="mt-8 text-lg font-semibold text-neutral-900 dark:text-neutral-100">History</h2>

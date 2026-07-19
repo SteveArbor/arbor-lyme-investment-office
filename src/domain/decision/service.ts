@@ -90,4 +90,9 @@ export class DecisionService {
   async getRatingHistory(ownerId: string, companyId: string): Promise<DecisionRecommendation[]> {
     return this.repository.listByCompanyId(ownerId, companyId);
   }
+
+  /** Batch read for multi-company views — the latest rating per company, one query. */
+  async getLatestRatings(ownerId: string, companyIds: string[]): Promise<DecisionRecommendation[]> {
+    return this.repository.listLatestByCompanyIds(ownerId, companyIds);
+  }
 }

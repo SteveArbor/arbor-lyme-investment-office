@@ -90,3 +90,85 @@ export async function buildCompanyMonitoringSnapshot(
     openJournalEntry: journalEntries.find((entry) => entry.status === "open") ?? null,
   };
 }
+
+export interface CompanyMonitoringSummary {
+  companyId: string;
+  /** null means no thesis has been recorded yet — distinct from a real "stable" status. */
+  thesisStatus: ThesisStatementStatus | null;
+  /** null means no valuation has been recorded yet — never a fabricated default figure. */
+  marginOfSafety: number | null;
+  blendedFairValue: number | null;
+  latestRating: InvestmentRating | null;
+  expectedReturn: number | null;
+  risks: string | null;
+  monitoringMetrics: string | null;
+  openJournalEntry: JournalEntry | null;
+}
+
+export interface BatchMonitoringDependencies {
+  researchService: Pick<ResearchService, "listByCompanyIds">;
+  thesisService: Pick<ThesisService, "listByCompanyIds">;
+  valuationService: Pick<ValuationService, "listByCompanyIds">;
+  decisionService: Pick<DecisionService, "getLatestRatings">;
+  journalService: Pick<JournalService, "listEntriesForCompanies">;
+}
+
+/**
+ * The Monitoring Dashboard's batch read model — one call per domain for
+ * every company being listed, not one call per domain PER company (Phase 2
+ * Architecture Review finding 4.5: the single-company
+ * buildCompanyMonitoringSnapshot above issues 5 queries and, via
+ * getOrCreate*, can write a default row purely from being viewed; neither
+ * is acceptable at dashboard scale). Companies with no research/thesis/
+ * valuation/rating yet are represented with null fields here, not a
+ * fabricated default — a dashboard listing many companies must not imply
+ * a real valuation exists where none has been entered.
+ */
+export async function buildCompanyMonitoringSnapshots(
+  deps: BatchMonitoringDependencies,
+  ownerId: string,
+  companyIds: string[]
+): Promise<Map<string, CompanyMonitoringSummary>> {
+  if (companyIds.length === 0) return new Map();
+
+  const [researchNotes, theses, valuations, latestRatings, journalEntries] = await Promise.all([
+    deps.researchService.listByCompanyIds(ownerId, companyIds),
+    deps.thesisService.listByCompanyIds(ownerId, companyIds),
+    deps.valuationService.listByCompanyIds(ownerId, companyIds),
+    deps.decisionService.getLatestRatings(ownerId, companyIds),
+    deps.journalService.listEntriesForCompanies(ownerId, companyIds),
+  ]);
+
+  const researchByCompany = new Map(researchNotes.map((row) => [row.companyId, row]));
+  const thesisByCompany = new Map(theses.map((row) => [row.companyId, row]));
+  const valuationByCompany = new Map(valuations.map((row) => [row.companyId, row]));
+  const ratingByCompany = new Map(latestRatings.map((row) => [row.companyId, row]));
+  const openJournalByCompany = new Map<string, JournalEntry>();
+  for (const entry of journalEntries) {
+    if (entry.status === "open" && !openJournalByCompany.has(entry.companyId)) {
+      openJournalByCompany.set(entry.companyId, entry);
+    }
+  }
+
+  const summaries = new Map<string, CompanyMonitoringSummary>();
+  for (const companyId of companyIds) {
+    const research = researchByCompany.get(companyId);
+    const thesis = thesisByCompany.get(companyId);
+    const valuation = valuationByCompany.get(companyId);
+    const rating = ratingByCompany.get(companyId);
+
+    summaries.set(companyId, {
+      companyId,
+      thesisStatus: thesis?.overallStatus ?? null,
+      marginOfSafety: valuation?.marginOfSafety ?? null,
+      blendedFairValue: valuation?.blendedFairValue ?? null,
+      latestRating: rating?.rating ?? null,
+      expectedReturn: rating?.inputs.expectedReturn ?? null,
+      risks: research?.risks ?? null,
+      monitoringMetrics: research?.monitoringMetrics ?? null,
+      openJournalEntry: openJournalByCompany.get(companyId) ?? null,
+    });
+  }
+
+  return summaries;
+}
