@@ -21,17 +21,26 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   const { portfolioService, companyService } = composeAppServices(supabase);
 
   let portfolio;
+  let holdings;
+  let companies;
   try {
-    portfolio = await portfolioService.getPortfolio(user!.id, id);
+    // Independent reads, run together — listHoldings/listCompanies don't
+    // depend on getPortfolio's result, only on notFound() being applied
+    // afterward if the portfolio itself doesn't resolve. companyService
+    // .listCompanies (one query) + a lookup map replaces what was
+    // previously one getCompany call per holding
+    // (docs/implementation/production-readiness.md).
+    [portfolio, holdings, companies] = await Promise.all([
+      portfolioService.getPortfolio(user!.id, id),
+      portfolioService.listHoldings(user!.id, id),
+      companyService.listCompanies(user!.id),
+    ]);
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
     throw error;
   }
+  const companyById = new Map(companies.map((company) => [company.id, company]));
 
-  const holdings = await portfolioService.listHoldings(user!.id, id);
-  const companies = await Promise.all(
-    holdings.map((holding) => companyService.getCompany(user!.id, holding.companyId))
-  );
   const holdingsValue = holdings.reduce(
     (sum, holding) => sum + holding.quantity * holding.averageCost,
     0
@@ -98,14 +107,14 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
               </tr>
             </thead>
             <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {holdings.map((holding, index) => (
+              {holdings.map((holding) => (
                 <tr key={holding.id}>
                   <td className="px-4 py-3">
                     <Link
                       href={`/companies/${holding.companyId}`}
                       className="font-medium text-neutral-900 hover:underline dark:text-neutral-100"
                     >
-                      {companies[index]?.name ?? holding.companyId}
+                      {companyById.get(holding.companyId)?.name ?? holding.companyId}
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">

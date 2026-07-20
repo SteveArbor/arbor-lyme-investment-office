@@ -80,8 +80,23 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
             Thesis: {THESIS_STATUS_LABELS[snapshot.thesisStatus]}
           </p>
           <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
-            Fair value: {snapshot.blendedFairValue.toFixed(2)} · Required margin of safety:{" "}
-            {(snapshot.marginOfSafety * 100).toFixed(0)}%
+            {snapshot.blendedFairValue > 0 ? (
+              <>
+                Fair value: {snapshot.blendedFairValue.toFixed(2)} · Required margin of safety:{" "}
+                {(snapshot.marginOfSafety * 100).toFixed(0)}%
+              </>
+            ) : (
+              // getOrCreateValuation (application/services/monitoring.ts)
+              // returns a real row with blendedFairValue: 0 the first time
+              // this page is viewed for a company with no valuation
+              // entered yet -- a genuine DCF result of exactly 0.00 doesn't
+              // otherwise occur, so this is a reliable "still the
+              // untouched default" signal. Showing "0.00" here would be
+              // indistinguishable from a real $0 valuation, which this
+              // codebase's "no invented data" principle doesn't allow
+              // (docs/implementation/production-readiness.md).
+              <>Not yet valued.</>
+            )}
           </p>
           {snapshot.openJournalEntry ? (
             <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
