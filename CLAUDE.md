@@ -103,6 +103,30 @@ Accumulate related work before requesting commit approval.
 
 ---
 
+## Project Status Document
+
+`docs/PROJECT_STATUS.md` is the authoritative high-level status document
+for the entire project. Any future session should be able to understand
+the current state of the project within two minutes by reading only
+`CLAUDE.md`, `docs/PROJECT_STATUS.md`, and `docs/adr/`.
+
+Update `docs/PROJECT_STATUS.md` automatically at the end of every
+completed milestone, as part of that milestone's own commit — never as a
+separate, later step. Always:
+
+- Preserve historical milestone information; only the current-status
+  sections (header, Completed Milestones, Recent Milestones, Technical
+  Debt, Outstanding Roadmap, Next Recommended Milestone, Session
+  Handover) get updated in place.
+- Keep it concise — it is an executive summary, not implementation
+  documentation. Reference ADRs and `docs/implementation/*.md` records
+  rather than duplicating their content.
+- Reflect the true current state, including open technical debt and
+  known blockers — this document is read by a future session with no
+  other context, so it must not be more optimistic than reality.
+
+---
+
 ## Architecture
 
 Optimise for long term maintainability.
