@@ -7,7 +7,7 @@ import {
   composeAppServices,
 } from "@/application/services";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
-import { cardClasses } from "@/components/ui/form-styles";
+import { cardClasses, inputClasses, labelClasses } from "@/components/ui/form-styles";
 import {
   clickableCellLinkClasses,
   clickableRowClasses,
@@ -67,7 +67,12 @@ function SummaryCard({
   return <div className={cardClasses}>{content}</div>;
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ portfolio?: string }>;
+}) {
+  const query = await searchParams;
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
@@ -76,10 +81,22 @@ export default async function DashboardPage() {
   const services = composeAppServices(supabase);
   const { companyService, portfolioService, tradingService, decisionService } = services;
 
-  const [companies, portfolios] = await Promise.all([
+  const [companies, allPortfolios] = await Promise.all([
     companyService.listCompanies(user!.id),
     portfolioService.listPortfolios(user!.id),
   ]);
+
+  // "All portfolios" (no selection) is today's only consolidated view — a
+  // future milestone will build real cross-portfolio reporting; this
+  // selector's job for now is just letting the daily-workspace cards focus
+  // on one portfolio at a time instead of always summing every portfolio.
+  const selectedPortfolioId =
+    query.portfolio && allPortfolios.some((p) => p.id === query.portfolio)
+      ? query.portfolio
+      : undefined;
+  const portfolios = selectedPortfolioId
+    ? allPortfolios.filter((p) => p.id === selectedPortfolioId)
+    : allPortfolios;
 
   const [snapshots, performanceByPortfolio] = await Promise.all([
     buildCompanyMonitoringSnapshots(
@@ -154,10 +171,42 @@ export default async function DashboardPage() {
 
   return (
     <main id="main-content" className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Dashboard</h1>
-      <p className="mt-1 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-        Your daily workspace — portfolio position, research coverage, and what needs attention next.
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
+            Dashboard
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
+            Your daily workspace — portfolio position, research coverage, and what needs
+            attention next.
+          </p>
+        </div>
+        {allPortfolios.length > 1 ? (
+          <form method="get" className="flex items-end gap-2">
+            <div>
+              <label htmlFor="portfolio" className={labelClasses}>
+                Portfolio
+              </label>
+              <select
+                id="portfolio"
+                name="portfolio"
+                defaultValue={selectedPortfolioId ?? ""}
+                className={`${inputClasses} w-auto`}
+              >
+                <option value="">All portfolios</option>
+                {allPortfolios.map((portfolio) => (
+                  <option key={portfolio.id} value={portfolio.id}>
+                    {portfolio.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="submit" className={`${inputClasses.replace("mt-1 ", "")} w-auto px-4`}>
+              View
+            </button>
+          </form>
+        ) : null}
+      </div>
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
@@ -193,7 +242,7 @@ export default async function DashboardPage() {
               : "text-neutral-900 dark:text-neutral-100"
           }
         />
-        <SummaryCard label="Portfolios" value={String(portfolios.length)} href="/portfolio" />
+        <SummaryCard label="Portfolios" value={String(allPortfolios.length)} href="/portfolio" />
       </div>
 
       {topActions.length > 0 ? (

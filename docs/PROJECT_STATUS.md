@@ -342,6 +342,20 @@ automated).
   _Deferred:_ no held company has needed it yet; the right transaction
   shape isn't obvious without a real case to design against. _Target:_ the
   first time a held company actually undergoes one.
+- **Five UI files still call raw `.toFixed()` instead of the shared
+  `src/lib/format.ts` formatters** (ADR 0029): `dashboard/page.tsx` and
+  `companies/[id]/page.tsx` (`blendedFairValue.toFixed(2)`),
+  `portfolio/page.tsx` (`cash.toFixed(2)`),
+  `companies/[id]/valuation/page.tsx` and `valuation-form.tsx`
+  (`fairValue.toFixed(2)`) — plus inconsistent percentage precision (0dp
+  in the journal views, 0dp and 1dp on the same company overview page).
+  Not a rounding-correctness bug (`.toFixed()` rounds the same way as
+  `Intl.NumberFormat` for these values) but a real, visible display
+  inconsistency ADR 0029's "consistent display throughout the platform"
+  goal doesn't yet fully cover. _Deferred:_ pre-dates `src/lib/format.ts`;
+  fixing was explicitly out of scope when ADR 0029 was written.
+  _Target:_ the next time any of these five files is touched for an
+  unrelated reason.
 
 ---
 
@@ -378,7 +392,7 @@ turn comes — intentionally a placeholder, not a committed backlog.
 
 # Open ADRs
 
-All 28 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
+All 29 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
 Dedicated, Non-Executing Domain), which is `Superseded by 0023`
 (Investment Rating / Portfolio Action split), and **ADR 0026** (Portfolio
 Accounting Principles), whose fee/interest/tax section is superseded by
@@ -386,7 +400,7 @@ Accounting Principles), whose fee/interest/tax section is superseded by
 both supersessions are recorded, not silently reversed, per this project's
 own ADR convention.
 
-No ADR is currently `Proposed`/under active review. The four most
+No ADR is currently `Proposed`/under active review. The five most
 consequential recent decisions, worth a future contributor's attention if
 anything in this area needs revisiting:
 
@@ -410,6 +424,16 @@ anything in this area needs revisiting:
   closes the fee-tracking gap ADR 0026 had named as a deliberate,
   acknowledged omission; a fee/tax row still has no link back to the trade
   it relates to (see Technical Debt).
+- **ADR 0029** — Portfolio Rounding Policy. Documentation-only, formalizing
+  a rule already true throughout `domain/*`/`application/services/*`:
+  round exactly once, at the database column boundary or at
+  `src/lib/format.ts`'s formatters, never in between. Written after a
+  live HL Stocks & Shares ISA import surfaced a 1p gap between the
+  platform's summed-then-rounded total and a source spreadsheet's
+  sum-of-already-rounded total — an expected, accepted consequence of the
+  policy, not a defect. Names five UI files that still call raw
+  `.toFixed()` instead of the shared formatters as a known deviation (see
+  Technical Debt).
 
 ---
 

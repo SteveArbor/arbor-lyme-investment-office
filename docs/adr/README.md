@@ -78,5 +78,6 @@ What would cause this decision to be revisited.
 | 0026 | Portfolio Accounting Principles                                              | Accepted\*          |
 | 0027 | Money-Weighted Return via Newton-Raphson XIRR, No External Library          | Accepted           |
 | 0028 | Fee, Interest, and Tax as First-Class Transaction Types                     | Accepted           |
+| 0029 | Portfolio Rounding Policy                                                    | Accepted           |
 
 \* ADR 0026's fee/interest/tax treatment section is superseded by ADR 0028; every other principle in ADR 0026 is unchanged.
