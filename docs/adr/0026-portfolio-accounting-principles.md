@@ -1,6 +1,7 @@
 # 0026. Portfolio Accounting Principles
 
-**Status:** Accepted
+**Status:** Accepted (fee/interest/tax treatment updated by ADR 0028 — every
+other principle below is unchanged and remains authoritative)
 
 ## Context
 

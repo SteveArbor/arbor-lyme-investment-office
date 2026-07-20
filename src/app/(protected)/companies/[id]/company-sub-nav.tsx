@@ -10,9 +10,13 @@ export function CompanySubNav({ companyId }: { companyId: string }) {
   const items = [
     { href: base, label: "Overview" },
     { href: `${base}/research`, label: "Research" },
-    { href: `${base}/thesis`, label: "Thesis" },
+    { href: `${base}/financials`, label: "Financials" },
     { href: `${base}/valuation`, label: "Valuation" },
+    { href: `${base}/thesis`, label: "Thesis" },
     { href: `${base}/journal`, label: "Journal" },
+    { href: `${base}/documents`, label: "Documents" },
+    { href: `${base}/transactions`, label: "Transactions" },
+    { href: `${base}/ai-analysis`, label: "AI Analysis" },
   ];
 
   return (

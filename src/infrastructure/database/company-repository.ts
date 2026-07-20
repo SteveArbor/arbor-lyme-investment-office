@@ -82,7 +82,13 @@ export class SupabaseCompanyRepository implements CompanyRepository {
       query = query.eq("watchlist", true);
     }
     if (filter?.search) {
-      query = query.or(`name.ilike.%${filter.search}%,ticker.ilike.%${filter.search}%`);
+      // `.or()` takes a raw PostgREST filter string — `,`/`(`/`)` are
+      // syntax delimiters there, and `%`/`_` are ILIKE wildcards, so an
+      // unescaped search term could alter which filter this call actually
+      // applies (docs/PROJECT_STATUS.md Technical Debt, fixed alongside
+      // Milestone 2.7's Companies search UI rather than left dormant).
+      const escaped = filter.search.replace(/[,()%_\\]/g, (char) => `\\${char}`);
+      query = query.or(`name.ilike.%${escaped}%,ticker.ilike.%${escaped}%`);
     }
 
     const { data, error } = await query.order("name", { ascending: true });

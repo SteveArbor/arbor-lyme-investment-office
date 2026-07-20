@@ -1,15 +1,12 @@
 /**
- * Hand-written to exactly match supabase/migrations/*.sql for the
- * Foundation milestone. This file is a stand-in for the output of:
- *
- *   supabase gen types typescript --project-id <project-ref> > src/types/database.ts
- *
- * which is not run in the Foundation milestone because no live Supabase
- * project is linked yet (see docs/implementation/foundation.md and
- * docs/local-supabase-strategy — not yet a real project until the
- * developer completes the manual setup step). Once a project exists, this
- * file should be regenerated via the command above and this comment
- * removed — do not hand-edit it after that point.
+ * Hand-written to exactly match supabase/migrations/*.sql. A live project
+ * exists (see docs/implementation/production-readiness.md) and
+ * `supabase gen types typescript --project-id <project-ref>` could
+ * generate this file going forward, but migrations here are still
+ * authored by hand alongside their TypeScript types in the same commit —
+ * regenerating from the live project is a validation step (worth doing
+ * periodically to catch drift), not the source of truth this file is
+ * edited against.
  */
 
 type TransactionRow = {
@@ -17,13 +14,15 @@ type TransactionRow = {
   owner_id: string;
   portfolio_id: string;
   company_id: string | null;
-  type: "buy" | "sell" | "dividend" | "cash_adjustment";
+  type: "buy" | "sell" | "dividend" | "fee" | "interest" | "tax" | "cash_adjustment";
+  category: "deposit" | "withdrawal" | "correction" | "other" | null;
   quantity: string | null;
   price_per_unit: string | null;
   amount: string;
   realised_gain: string | null;
   occurred_at: string;
   notes: string | null;
+  reference: string | null;
   created_at: string;
   idempotency_key: string | null;
 };
@@ -448,6 +447,42 @@ export interface Database {
           p_amount: number;
           p_occurred_at: string;
           p_notes: string | null;
+          p_reference?: string | null;
+          p_idempotency_key?: string | null;
+        };
+        Returns: TransactionRow;
+      };
+      record_fee_transaction: {
+        Args: {
+          p_portfolio_id: string;
+          p_amount: number;
+          p_occurred_at: string;
+          p_notes: string | null;
+          p_reference?: string | null;
+          p_company_id?: string | null;
+          p_idempotency_key?: string | null;
+        };
+        Returns: TransactionRow;
+      };
+      record_interest_transaction: {
+        Args: {
+          p_portfolio_id: string;
+          p_amount: number;
+          p_occurred_at: string;
+          p_notes: string | null;
+          p_reference?: string | null;
+          p_idempotency_key?: string | null;
+        };
+        Returns: TransactionRow;
+      };
+      record_tax_transaction: {
+        Args: {
+          p_portfolio_id: string;
+          p_amount: number;
+          p_occurred_at: string;
+          p_notes: string | null;
+          p_reference?: string | null;
+          p_company_id?: string | null;
           p_idempotency_key?: string | null;
         };
         Returns: TransactionRow;
@@ -455,9 +490,11 @@ export interface Database {
       record_cash_adjustment_transaction: {
         Args: {
           p_portfolio_id: string;
+          p_category: string;
           p_amount: number;
           p_occurred_at: string;
           p_notes: string | null;
+          p_reference?: string | null;
           p_idempotency_key?: string | null;
         };
         Returns: TransactionRow;

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 
@@ -27,16 +28,22 @@ export default async function ProtectedLayout({ children }: { children: ReactNod
   return (
     <div className="flex min-h-svh flex-col">
       <header className="border-b border-neutral-200 dark:border-neutral-800">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div className="flex items-center gap-6">
-            {/* eslint-disable-next-line @next/next/no-img-element -- see docs/brand-assets.md */}
-            <img
-              src="/brand/arbor-lyme-logo.svg"
-              alt="Arbor Lyme Capital"
-              width={845}
-              height={502}
-              className="h-6 w-auto"
-            />
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-4">
+          <div className="flex items-center gap-8">
+            <Link
+              href="/dashboard"
+              aria-label="Arbor Lyme Capital — Dashboard"
+              className="flex items-center transition-opacity hover:opacity-80"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- see docs/brand-assets.md */}
+              <img
+                src="/brand/arbor-lyme-logo.svg"
+                alt="Arbor Lyme Capital"
+                width={845}
+                height={502}
+                className="h-8 w-auto sm:h-9"
+              />
+            </Link>
             <SiteNav />
           </div>
           <form action={signOutAction}>

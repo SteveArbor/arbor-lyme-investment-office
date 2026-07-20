@@ -14,7 +14,11 @@ import type {
   RecordBuyData,
   RecordCashAdjustmentData,
   RecordDividendData,
+  RecordFeeData,
+  RecordInterestData,
   RecordSellData,
+  RecordTaxData,
+  TransactionListFilter,
 } from "./repository";
 import { TradingService } from "./service";
 
@@ -102,12 +106,14 @@ class FakeHoldingRepository {
 
 /**
  * Models the real Postgres functions
- * (supabase/migrations/20260719000015_transaction_integrity_hardening.sql),
+ * (supabase/migrations/20260719000015_transaction_integrity_hardening.sql,
+ * extended in
+ * supabase/migrations/20260720000001_cash_management_and_performance.sql),
  * not just their all-or-nothing write contract: the resulting
  * quantity/average cost/realised gain are computed *here*, from the
  * fake's own current state, exactly like the SQL function computes them
- * from a row it has just locked — `RecordBuyData`/`RecordSellData` no
- * longer carry those fields at all (docs/implementation/
+ * from a row it has just locked — the `RecordBuyData`/`RecordSellData`
+ * inputs never carry those fields at all (docs/implementation/
  * staff-engineer-review.md finding H1), so there is no way for a test (or
  * TradingService) to hand this fake a value to blindly persist. Reuses
  * domain/trading/model.ts's calculateWeightedAverageCost/
@@ -144,7 +150,7 @@ class FakeAtomicTransactionRepository {
   private findExistingByKey(
     ownerId: string,
     idempotencyKey: string | undefined
-  ): Transaction | null {
+  ): FakeTransactionRow | null {
     if (!idempotencyKey) return null;
     return (
       this.rows.find(
@@ -207,6 +213,16 @@ class FakeAtomicTransactionRepository {
     }
   }
 
+  private record(row: Omit<FakeTransactionRow, "id" | "createdAt">): FakeTransactionRow {
+    const transaction: FakeTransactionRow = {
+      id: `txn-${nextId++}`,
+      createdAt: new Date().toISOString(),
+      ...row,
+    };
+    this.rows.push(transaction);
+    return transaction;
+  }
+
   async recordBuy(ownerId: string, data: RecordBuyData) {
     const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
     if (existing) return existing;
@@ -229,23 +245,21 @@ class FakeAtomicTransactionRepository {
     this.applyCashDelta(ownerId, data.portfolioId, -cost);
     this.applyHolding(ownerId, data.portfolioId, data.companyId, newQuantity, newAverageCost);
 
-    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
-      id: `txn-${nextId++}`,
+    return this.record({
       ownerId,
       portfolioId: data.portfolioId,
       companyId: data.companyId,
       type: "buy",
+      category: null,
       quantity: data.quantity,
       pricePerUnit: data.pricePerUnit,
       amount: -cost,
       realisedGain: null,
       occurredAt: data.occurredAt,
       notes: data.notes,
-      createdAt: new Date().toISOString(),
+      reference: null,
       idempotencyKeyForTest: data.idempotencyKey,
-    };
-    this.rows.push(transaction);
-    return transaction;
+    });
   }
 
   async recordSell(ownerId: string, data: RecordSellData) {
@@ -271,23 +285,21 @@ class FakeAtomicTransactionRepository {
     this.applyCashDelta(ownerId, data.portfolioId, proceeds);
     this.applyHolding(ownerId, data.portfolioId, data.companyId, newQuantity, newAverageCost);
 
-    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
-      id: `txn-${nextId++}`,
+    return this.record({
       ownerId,
       portfolioId: data.portfolioId,
       companyId: data.companyId,
       type: "sell",
+      category: null,
       quantity: data.quantity,
       pricePerUnit: data.pricePerUnit,
       amount: proceeds,
       realisedGain,
       occurredAt: data.occurredAt,
       notes: data.notes,
-      createdAt: new Date().toISOString(),
+      reference: null,
       idempotencyKeyForTest: data.idempotencyKey,
-    };
-    this.rows.push(transaction);
-    return transaction;
+    });
   }
 
   async recordDividend(ownerId: string, data: RecordDividendData) {
@@ -297,23 +309,99 @@ class FakeAtomicTransactionRepository {
 
     this.portfolio(ownerId, data.portfolioId);
     this.applyCashDelta(ownerId, data.portfolioId, data.amount);
-    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
-      id: `txn-${nextId++}`,
+    return this.record({
       ownerId,
       portfolioId: data.portfolioId,
       companyId: data.companyId,
       type: "dividend",
+      category: null,
       quantity: null,
       pricePerUnit: null,
       amount: data.amount,
       realisedGain: null,
       occurredAt: data.occurredAt,
       notes: data.notes,
-      createdAt: new Date().toISOString(),
+      reference: data.reference ?? null,
       idempotencyKeyForTest: data.idempotencyKey,
-    };
-    this.rows.push(transaction);
-    return transaction;
+    });
+  }
+
+  async recordFee(ownerId: string, data: RecordFeeData) {
+    const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
+    if (existing) return existing;
+    this.maybeFail();
+
+    const portfolio = this.portfolio(ownerId, data.portfolioId);
+    if (data.amount > portfolio.cash) {
+      throw new ConflictError("Insufficient cash to record this fee");
+    }
+    this.applyCashDelta(ownerId, data.portfolioId, -data.amount);
+    return this.record({
+      ownerId,
+      portfolioId: data.portfolioId,
+      companyId: data.companyId ?? null,
+      type: "fee",
+      category: null,
+      quantity: null,
+      pricePerUnit: null,
+      amount: -data.amount,
+      realisedGain: null,
+      occurredAt: data.occurredAt,
+      notes: data.notes,
+      reference: data.reference ?? null,
+      idempotencyKeyForTest: data.idempotencyKey,
+    });
+  }
+
+  async recordInterest(ownerId: string, data: RecordInterestData) {
+    const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
+    if (existing) return existing;
+    this.maybeFail();
+
+    this.portfolio(ownerId, data.portfolioId);
+    this.applyCashDelta(ownerId, data.portfolioId, data.amount);
+    return this.record({
+      ownerId,
+      portfolioId: data.portfolioId,
+      companyId: null,
+      type: "interest",
+      category: null,
+      quantity: null,
+      pricePerUnit: null,
+      amount: data.amount,
+      realisedGain: null,
+      occurredAt: data.occurredAt,
+      notes: data.notes,
+      reference: data.reference ?? null,
+      idempotencyKeyForTest: data.idempotencyKey,
+    });
+  }
+
+  async recordTax(ownerId: string, data: RecordTaxData) {
+    const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
+    if (existing) return existing;
+    this.maybeFail();
+
+    const portfolio = this.portfolio(ownerId, data.portfolioId);
+    if (data.amount > portfolio.cash) {
+      throw new ConflictError("Insufficient cash to record this tax payment");
+    }
+    this.applyCashDelta(ownerId, data.portfolioId, -data.amount);
+    return this.record({
+      ownerId,
+      portfolioId: data.portfolioId,
+      companyId: data.companyId ?? null,
+      type: "tax",
+      category: null,
+      quantity: null,
+      pricePerUnit: null,
+      amount: -data.amount,
+      realisedGain: null,
+      occurredAt: data.occurredAt,
+      notes: data.notes,
+      reference: data.reference ?? null,
+      idempotencyKeyForTest: data.idempotencyKey,
+    });
   }
 
   async recordCashAdjustment(ownerId: string, data: RecordCashAdjustmentData) {
@@ -322,24 +410,28 @@ class FakeAtomicTransactionRepository {
     this.maybeFail();
 
     this.portfolio(ownerId, data.portfolioId);
-    this.applyCashDelta(ownerId, data.portfolioId, data.amount);
-    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
-      id: `txn-${nextId++}`,
+    const signedAmount =
+      data.category === "deposit"
+        ? data.amount
+        : data.category === "withdrawal"
+          ? -data.amount
+          : data.amount;
+    this.applyCashDelta(ownerId, data.portfolioId, signedAmount);
+    return this.record({
       ownerId,
       portfolioId: data.portfolioId,
       companyId: null,
       type: "cash_adjustment",
+      category: data.category,
       quantity: null,
       pricePerUnit: null,
-      amount: data.amount,
+      amount: signedAmount,
       realisedGain: null,
       occurredAt: data.occurredAt,
       notes: data.notes,
-      createdAt: new Date().toISOString(),
+      reference: data.reference ?? null,
       idempotencyKeyForTest: data.idempotencyKey,
-    };
-    this.rows.push(transaction);
-    return transaction;
+    });
   }
 
   async listByPortfolioId(ownerId: string, portfolioId: string) {
@@ -351,6 +443,30 @@ class FakeAtomicTransactionRepository {
       (row) =>
         row.ownerId === ownerId && row.portfolioId === portfolioId && row.companyId === companyId
     );
+  }
+
+  async listByPortfolioIdFiltered(
+    ownerId: string,
+    portfolioId: string,
+    filter: TransactionListFilter
+  ) {
+    let matches = this.rows.filter(
+      (row) => row.ownerId === ownerId && row.portfolioId === portfolioId
+    );
+    if (filter.type) matches = matches.filter((row) => row.type === filter.type);
+    if (filter.companyId) matches = matches.filter((row) => row.companyId === filter.companyId);
+    if (filter.from) matches = matches.filter((row) => row.occurredAt >= filter.from!);
+    if (filter.to) matches = matches.filter((row) => row.occurredAt <= filter.to!);
+    matches = [...matches].sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
+
+    const totalCount = matches.length;
+    const offset = filter.offset ?? 0;
+    const limit = filter.limit ?? 25;
+    return { transactions: matches.slice(offset, offset + limit), totalCount };
+  }
+
+  async getById(ownerId: string, transactionId: string) {
+    return this.rows.find((row) => row.ownerId === ownerId && row.id === transactionId) ?? null;
   }
 }
 
@@ -521,30 +637,130 @@ describe("TradingService.recordDividend", () => {
   });
 });
 
-describe("TradingService.recordCashAdjustment", () => {
-  it("increases cash on a positive adjustment", async () => {
+describe("TradingService.recordFee", () => {
+  it("debits cash for a fee", async () => {
     const { service, portfolio, portfolios } = buildService(1_000);
-    await service.recordCashAdjustment(OWNER, portfolio.id, { amount: 500, occurredAt }, "corr-1");
+    const result = await service.recordFee(
+      OWNER,
+      portfolio.id,
+      { amount: 15, occurredAt, notes: "Platform fee" },
+      "corr-1"
+    );
+    expect(result.transaction.amount).toBe(-15);
+    const updated = await portfolios.getById(OWNER, portfolio.id);
+    expect(updated?.cash).toBe(985);
+  });
+
+  it("rejects a fee that exceeds available cash with a ConflictError", async () => {
+    const { service, portfolio } = buildService(10);
+    await expect(
+      service.recordFee(OWNER, portfolio.id, { amount: 50, occurredAt, notes: null }, "corr-1")
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+describe("TradingService.recordInterest", () => {
+  it("credits cash for interest received", async () => {
+    const { service, portfolio, portfolios } = buildService(1_000);
+    const result = await service.recordInterest(
+      OWNER,
+      portfolio.id,
+      { amount: 3.5, occurredAt, notes: null },
+      "corr-1"
+    );
+    expect(result.transaction.amount).toBe(3.5);
+    const updated = await portfolios.getById(OWNER, portfolio.id);
+    expect(updated?.cash).toBe(1_003.5);
+  });
+});
+
+describe("TradingService.recordTax", () => {
+  it("debits cash for a tax payment", async () => {
+    const { service, portfolio, portfolios } = buildService(1_000);
+    await service.recordTax(
+      OWNER,
+      portfolio.id,
+      { amount: 40, occurredAt, notes: "Withholding" },
+      "corr-1"
+    );
+    const updated = await portfolios.getById(OWNER, portfolio.id);
+    expect(updated?.cash).toBe(960);
+  });
+
+  it("rejects a tax payment that exceeds available cash with a ConflictError", async () => {
+    const { service, portfolio } = buildService(10);
+    await expect(
+      service.recordTax(OWNER, portfolio.id, { amount: 50, occurredAt, notes: null }, "corr-1")
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+describe("TradingService.recordCashAdjustment", () => {
+  it("increases cash for a deposit", async () => {
+    const { service, portfolio, portfolios } = buildService(1_000);
+    const result = await service.recordCashAdjustment(
+      OWNER,
+      portfolio.id,
+      { category: "deposit", amount: 500, occurredAt },
+      "corr-1"
+    );
+    expect(result.transaction.amount).toBe(500);
+    expect(result.transaction.category).toBe("deposit");
     const updated = await portfolios.getById(OWNER, portfolio.id);
     expect(updated?.cash).toBe(1_500);
+  });
+
+  it("decreases cash for a withdrawal, given a positive amount", async () => {
+    const { service, portfolio, portfolios } = buildService(1_000);
+    const result = await service.recordCashAdjustment(
+      OWNER,
+      portfolio.id,
+      { category: "withdrawal", amount: 300, occurredAt },
+      "corr-1"
+    );
+    expect(result.transaction.amount).toBe(-300);
+    const updated = await portfolios.getById(OWNER, portfolio.id);
+    expect(updated?.cash).toBe(700);
   });
 
   it("rejects a withdrawal that would make cash negative with a ConflictError", async () => {
     const { service, portfolio } = buildService(100);
     await expect(
-      service.recordCashAdjustment(OWNER, portfolio.id, { amount: -500, occurredAt }, "corr-1")
+      service.recordCashAdjustment(
+        OWNER,
+        portfolio.id,
+        { category: "withdrawal", amount: 500, occurredAt },
+        "corr-1"
+      )
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("allows a signed amount for a correction, either direction", async () => {
+    const { service, portfolio, portfolios } = buildService(1_000);
+    await service.recordCashAdjustment(
+      OWNER,
+      portfolio.id,
+      { category: "correction", amount: -50, occurredAt },
+      "corr-1"
+    );
+    const updated = await portfolios.getById(OWNER, portfolio.id);
+    expect(updated?.cash).toBe(950);
   });
 
   it("rejects a zero-amount adjustment", async () => {
     const { service, portfolio } = buildService(100);
     await expect(
-      service.recordCashAdjustment(OWNER, portfolio.id, { amount: 0, occurredAt }, "corr-1")
+      service.recordCashAdjustment(
+        OWNER,
+        portfolio.id,
+        { category: "other", amount: 0, occurredAt },
+        "corr-1"
+      )
     ).rejects.toThrow(); // caught by zod (ValidationError), before any repository call
   });
 });
 
-describe("TradingService history", () => {
+describe("TradingService history and filtering", () => {
   it("preserves every transaction rather than overwriting", async () => {
     const { service, portfolio } = buildService(10_000);
     await service.recordBuy(
@@ -562,6 +778,43 @@ describe("TradingService history", () => {
 
     const history = await service.listTransactionsForCompany(OWNER, portfolio.id, COMPANY_ID);
     expect(history).toHaveLength(2);
+  });
+
+  it("filters by type and paginates", async () => {
+    const { service, portfolio } = buildService(10_000);
+    await service.recordFee(OWNER, portfolio.id, { amount: 1, occurredAt, notes: null }, "c1");
+    await service.recordFee(OWNER, portfolio.id, { amount: 2, occurredAt, notes: null }, "c2");
+    await service.recordInterest(
+      OWNER,
+      portfolio.id,
+      { amount: 3, occurredAt, notes: null },
+      "c3"
+    );
+
+    const feesOnly = await service.listTransactionsFiltered(OWNER, portfolio.id, {
+      type: "fee",
+    });
+    expect(feesOnly.totalCount).toBe(2);
+    expect(feesOnly.transactions).toHaveLength(2);
+
+    const firstPage = await service.listTransactionsFiltered(OWNER, portfolio.id, { limit: 1 });
+    expect(firstPage.totalCount).toBe(3);
+    expect(firstPage.transactions).toHaveLength(1);
+  });
+
+  it("fetches a single transaction by id, or throws NotFoundError", async () => {
+    const { service, portfolio } = buildService(10_000);
+    const { transaction } = await service.recordInterest(
+      OWNER,
+      portfolio.id,
+      { amount: 5, occurredAt, notes: null },
+      "corr-1"
+    );
+
+    const fetched = await service.getTransaction(OWNER, transaction.id);
+    expect(fetched.id).toBe(transaction.id);
+
+    await expect(service.getTransaction(OWNER, "missing")).rejects.toBeInstanceOf(NotFoundError);
   });
 });
 
@@ -633,7 +886,12 @@ describe("TradingService — atomicity under a mid-operation failure", () => {
     transactions.simulateFailureOnNextWrite(new Error("simulated crash: connection dropped"));
 
     await expect(
-      service.recordCashAdjustment(OWNER, portfolio.id, { amount: 500, occurredAt }, "corr-1")
+      service.recordCashAdjustment(
+        OWNER,
+        portfolio.id,
+        { category: "deposit", amount: 500, occurredAt },
+        "corr-1"
+      )
     ).rejects.toThrow("simulated crash");
 
     const updatedPortfolio = await portfolios.getById(OWNER, portfolio.id);
@@ -646,12 +904,162 @@ describe("TradingService — atomicity under a mid-operation failure", () => {
     const { service, portfolio, portfolios, transactions } = buildService(1_000);
     transactions.simulateFailureOnNextWrite(new Error("simulated crash"));
     await expect(
-      service.recordCashAdjustment(OWNER, portfolio.id, { amount: 500, occurredAt }, "corr-1")
+      service.recordCashAdjustment(
+        OWNER,
+        portfolio.id,
+        { category: "deposit", amount: 500, occurredAt },
+        "corr-1"
+      )
     ).rejects.toThrow();
 
     // The armed failure only fires once — the system recovers cleanly for the next call.
-    await service.recordCashAdjustment(OWNER, portfolio.id, { amount: 500, occurredAt }, "corr-2");
+    await service.recordCashAdjustment(
+      OWNER,
+      portfolio.id,
+      { category: "deposit", amount: 500, occurredAt },
+      "corr-2"
+    );
     const updatedPortfolio = await portfolios.getById(OWNER, portfolio.id);
     expect(updatedPortfolio?.cash).toBe(1_500);
+  });
+});
+
+/**
+ * Zod rejects malformed input before any repository call — these tests
+ * confirm that boundary, not that a particular error message appears
+ * (docs/development-roadmap.md "Validation": negative holdings/cash,
+ * invalid prices, quantities, and dates must never reach the database).
+ * Every branch here should throw ValidationError; the transactions array
+ * asserted empty on a couple of cases proves nothing was written.
+ */
+describe("TradingService input validation", () => {
+  it("rejects a buy with a negative or zero quantity", async () => {
+    const { service, portfolio, transactions } = buildService(10_000);
+    await expect(
+      service.recordBuy(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: -1, pricePerUnit: 50, occurredAt },
+        "corr-1"
+      )
+    ).rejects.toThrow();
+    await expect(
+      service.recordBuy(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 0, pricePerUnit: 50, occurredAt },
+        "corr-2"
+      )
+    ).rejects.toThrow();
+    expect(transactions.rows).toHaveLength(0);
+  });
+
+  it("rejects a buy with a negative or zero price", async () => {
+    const { service, portfolio } = buildService(10_000);
+    await expect(
+      service.recordBuy(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 10, pricePerUnit: -50, occurredAt },
+        "corr-1"
+      )
+    ).rejects.toThrow();
+    await expect(
+      service.recordBuy(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 0, occurredAt },
+        "corr-2"
+      )
+    ).rejects.toThrow();
+  });
+
+  it("rejects a buy with a malformed date", async () => {
+    const { service, portfolio } = buildService(10_000);
+    await expect(
+      service.recordBuy(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 50, occurredAt: "not-a-date" },
+        "corr-1"
+      )
+    ).rejects.toThrow();
+  });
+
+  it("rejects a sell with a negative or zero quantity or price", async () => {
+    const { service, portfolio } = buildService(10_000);
+    await expect(
+      service.recordSell(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: -1, pricePerUnit: 50, occurredAt },
+        "corr-1"
+      )
+    ).rejects.toThrow();
+    await expect(
+      service.recordSell(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 0, occurredAt },
+        "corr-2"
+      )
+    ).rejects.toThrow();
+  });
+
+  it("rejects a dividend with a negative or zero amount", async () => {
+    const { service, portfolio } = buildService(10_000);
+    await expect(
+      service.recordDividend(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, amount: -10, occurredAt },
+        "corr-1"
+      )
+    ).rejects.toThrow();
+    await expect(
+      service.recordDividend(
+        OWNER,
+        portfolio.id,
+        { companyId: COMPANY_ID, amount: 0, occurredAt },
+        "corr-2"
+      )
+    ).rejects.toThrow();
+  });
+
+  it("rejects a fee, interest, or tax with a negative or zero amount", async () => {
+    const { service, portfolio } = buildService(10_000);
+    await expect(
+      service.recordFee(OWNER, portfolio.id, { amount: -10, occurredAt }, "corr-1")
+    ).rejects.toThrow();
+    await expect(
+      service.recordInterest(OWNER, portfolio.id, { amount: 0, occurredAt }, "corr-2")
+    ).rejects.toThrow();
+    await expect(
+      service.recordTax(OWNER, portfolio.id, { amount: -5, occurredAt }, "corr-3")
+    ).rejects.toThrow();
+  });
+
+  it("rejects a cash adjustment with an unrecognised category", async () => {
+    const { service, portfolio } = buildService(10_000);
+    await expect(
+      service.recordCashAdjustment(
+        OWNER,
+        portfolio.id,
+        { category: "bonus", amount: 100, occurredAt }, // invalid category — input is `unknown`, so zod is the only gate
+        "corr-1"
+      )
+    ).rejects.toThrow();
+  });
+
+  it("rejects every record call against a portfolio that does not exist", async () => {
+    const { service } = buildService(10_000);
+    await expect(
+      service.recordBuy(
+        OWNER,
+        "missing-portfolio",
+        { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 50, occurredAt },
+        "corr-1"
+      )
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });

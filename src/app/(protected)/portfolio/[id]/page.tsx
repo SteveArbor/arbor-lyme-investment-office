@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { composeAppServices } from "@/application/services";
-import { cardClasses, primaryButtonClasses } from "@/components/ui/form-styles";
+import { buildPortfolioPerformanceData, composeAppServices } from "@/application/services";
+import { primaryButtonClasses } from "@/components/ui/form-styles";
 import { NotFoundError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
+
+import { type PerformanceHoldingRow, PortfolioPerformancePanel } from "./portfolio-performance-panel";
 
 export const metadata: Metadata = {
   title: "Portfolio — Arbor Lyme Capital",
@@ -18,22 +20,23 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { portfolioService, companyService } = composeAppServices(supabase);
+  const { portfolioService, tradingService, companyService, decisionService, settingsService } =
+    composeAppServices(supabase);
 
   let portfolio;
-  let holdings;
   let companies;
+  let performanceData;
+  let settings;
   try {
-    // Independent reads, run together — listHoldings/listCompanies don't
-    // depend on getPortfolio's result, only on notFound() being applied
-    // afterward if the portfolio itself doesn't resolve. companyService
-    // .listCompanies (one query) + a lookup map replaces what was
-    // previously one getCompany call per holding
-    // (docs/implementation/production-readiness.md).
-    [portfolio, holdings, companies] = await Promise.all([
+    [portfolio, companies, performanceData, settings] = await Promise.all([
       portfolioService.getPortfolio(user!.id, id),
-      portfolioService.listHoldings(user!.id, id),
       companyService.listCompanies(user!.id),
+      buildPortfolioPerformanceData(
+        { portfolioService, tradingService, decisionService },
+        user!.id,
+        id
+      ),
+      settingsService.getSettings(user!.id),
     ]);
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
@@ -41,13 +44,22 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
   }
   const companyById = new Map(companies.map((company) => [company.id, company]));
 
-  const holdingsValue = holdings.reduce(
-    (sum, holding) => sum + holding.quantity * holding.averageCost,
-    0
-  );
+  const holdingRows: PerformanceHoldingRow[] = performanceData.holdings.map((holding) => {
+    const company = companyById.get(holding.companyId);
+    return {
+      companyId: holding.companyId,
+      companyName: company?.name ?? holding.companyId,
+      ticker: company?.ticker ?? "—",
+      quantity: holding.quantity,
+      averageCost: holding.averageCost,
+      targetAllocationPercent: holding.targetAllocationPercent,
+      investmentRating: holding.investmentRating,
+      lastUpdated: holding.lastUpdated,
+    };
+  });
 
   return (
-    <main id="main-content" className="mx-auto max-w-5xl px-4 py-8">
+    <main id="main-content" className="mx-auto max-w-6xl px-4 py-8">
       <p className="text-sm">
         <Link href="/portfolio" className="text-neutral-600 hover:underline dark:text-neutral-400">
           ← All portfolios
@@ -62,79 +74,20 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
         </Link>
       </div>
 
-      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className={cardClasses}>
-          <p className="text-xs font-medium tracking-wide text-neutral-500 uppercase">Cash</p>
-          <p className="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            {portfolio.cash.toFixed(2)}
-          </p>
-        </div>
-        <div className={cardClasses}>
-          <p className="text-xs font-medium tracking-wide text-neutral-500 uppercase">
-            Holdings (at cost)
-          </p>
-          <p className="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            {holdingsValue.toFixed(2)}
-          </p>
-        </div>
-        <div className={cardClasses}>
-          <p className="text-xs font-medium tracking-wide text-neutral-500 uppercase">
-            Total (at cost)
-          </p>
-          <p className="mt-1 text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-            {(portfolio.cash + holdingsValue).toFixed(2)}
-          </p>
-        </div>
+      <div className="mt-6">
+        <PortfolioPerformancePanel
+          portfolioId={id}
+          currency={settings.baseCurrency}
+          cash={performanceData.cash}
+          holdingRows={holdingRows}
+          realisedGainTotal={performanceData.realisedGainTotal}
+          dividendsReceived={performanceData.dividendsReceived}
+          feesPaid={performanceData.feesPaid}
+          taxesPaid={performanceData.taxesPaid}
+          netContributions={performanceData.netContributions}
+          cashFlows={performanceData.cashFlows}
+        />
       </div>
-
-      <h2 className="mt-8 text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-        Holdings
-      </h2>
-      {holdings.length === 0 ? (
-        <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-          No open positions. Record a buy transaction to start one.
-        </p>
-      ) : (
-        <div className="mt-3 overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-          <table className="w-full min-w-max text-left text-sm">
-            <thead className="border-b border-neutral-200 bg-neutral-50 text-xs font-medium tracking-wide text-neutral-600 uppercase dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
-              <tr>
-                <th className="px-4 py-3">Company</th>
-                <th className="px-4 py-3">Quantity</th>
-                <th className="px-4 py-3">Average cost</th>
-                <th className="px-4 py-3">Cost basis</th>
-                <th className="px-4 py-3">Target allocation</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
-              {holdings.map((holding) => (
-                <tr key={holding.id}>
-                  <td className="px-4 py-3">
-                    <Link
-                      href={`/companies/${holding.companyId}`}
-                      className="font-medium text-neutral-900 hover:underline dark:text-neutral-100"
-                    >
-                      {companyById.get(holding.companyId)?.name ?? holding.companyId}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                    {holding.quantity}
-                  </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                    {holding.averageCost.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                    {(holding.quantity * holding.averageCost).toFixed(2)}
-                  </td>
-                  <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                    {(holding.targetAllocationPercent * 100).toFixed(0)}%
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </main>
   );
 }

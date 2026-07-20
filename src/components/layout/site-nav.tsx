@@ -21,9 +21,12 @@ export function SiteNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Primary" className="flex items-center gap-1">
+    <nav aria-label="Primary" className="flex flex-wrap items-center gap-1">
       {NAV_ITEMS.map((item) => {
-        const isActive = pathname === item.href;
+        // Sub-routes (e.g. /companies/[id]/research) should keep the
+        // parent tab highlighted, not just the exact list page
+        // (Milestone 2.7 Part 2: "better active navigation state").
+        const isActive = pathname === item.href || pathname?.startsWith(`${item.href}/`);
         return (
           <Link
             key={item.href}

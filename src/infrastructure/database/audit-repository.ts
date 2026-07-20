@@ -32,4 +32,31 @@ export class SupabaseAuditRepository implements AuditRepository {
 
     if (error) throw error;
   }
+
+  async listByEntity(
+    actorId: string,
+    entityType: string,
+    entityId: string
+  ): Promise<AuditRecord[]> {
+    const { data, error } = await this.client
+      .from("audit_events")
+      .select("*")
+      .eq("actor_id", actorId)
+      .eq("entity_type", entityType)
+      .eq("entity_id", entityId)
+      .order("occurred_at", { ascending: false });
+
+    if (error) throw error;
+    return (data ?? []).map((row) => ({
+      actorId: row.actor_id,
+      eventType: row.event_type,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      correlationId: row.correlation_id,
+      metadata: (row.metadata as Record<string, unknown>) ?? {},
+      source: row.source as AuditRecord["source"],
+      outcome: row.outcome as AuditRecord["outcome"],
+      occurredAt: row.occurred_at,
+    }));
+  }
 }

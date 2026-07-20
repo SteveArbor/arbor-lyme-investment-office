@@ -1,4 +1,4 @@
-import type { Transaction } from "./model";
+import type { CashAdjustmentCategory, Transaction } from "./model";
 
 export interface RecordBuyData {
   portfolioId: string;
@@ -28,25 +28,77 @@ export interface RecordDividendData {
   amount: number;
   occurredAt: string;
   notes: string | null;
+  reference?: string | null;
+  idempotencyKey?: string;
+}
+
+export interface RecordFeeData {
+  portfolioId: string;
+  companyId?: string | null;
+  amount: number;
+  occurredAt: string;
+  notes: string | null;
+  reference?: string | null;
+  idempotencyKey?: string;
+}
+
+export interface RecordInterestData {
+  portfolioId: string;
+  amount: number;
+  occurredAt: string;
+  notes: string | null;
+  reference?: string | null;
+  idempotencyKey?: string;
+}
+
+export interface RecordTaxData {
+  portfolioId: string;
+  companyId?: string | null;
+  amount: number;
+  occurredAt: string;
+  notes: string | null;
+  reference?: string | null;
   idempotencyKey?: string;
 }
 
 export interface RecordCashAdjustmentData {
   portfolioId: string;
+  category: CashAdjustmentCategory;
   amount: number;
   occurredAt: string;
   notes: string | null;
+  reference?: string | null;
   idempotencyKey?: string;
+}
+
+export interface TransactionListFilter {
+  type?: Transaction["type"];
+  companyId?: string;
+  /** Inclusive lower bound on `occurredAt`, ISO date/datetime string. */
+  from?: string;
+  /** Inclusive upper bound on `occurredAt`, ISO date/datetime string. */
+  to?: string;
+  /** Sort by occurredAt. Defaults to "desc" (newest first). */
+  sortDirection?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}
+
+export interface TransactionPage {
+  transactions: Transaction[];
+  totalCount: number;
 }
 
 /**
  * Interface only — implemented in infrastructure/database. Every record*
- * method performs its ledger insert, holding update, and portfolio cash
- * update as a single atomic database operation (Phase 2 Architecture
- * Review finding 4.1 — see the Postgres functions in
+ * method performs its ledger insert, holding update (buy/sell only), and
+ * portfolio cash update as a single atomic database operation (Phase 2
+ * Architecture Review finding 4.1 — see the Postgres functions in
  * supabase/migrations/20260719000014_atomic_transaction_functions.sql,
  * hardened further in
- * supabase/migrations/20260719000015_transaction_integrity_hardening.sql)
+ * supabase/migrations/20260719000015_transaction_integrity_hardening.sql,
+ * and extended with fee/interest/tax/categorised cash adjustments in
+ * supabase/migrations/20260720000001_cash_management_and_performance.sql)
  * — never as separate calls a caller could partially apply. The resulting
  * holding quantity/average cost and any realised gain are computed inside
  * that database call, from state it has just locked — never accepted as a
@@ -59,7 +111,17 @@ export interface TransactionRepository {
   recordBuy(ownerId: string, data: RecordBuyData): Promise<Transaction>;
   recordSell(ownerId: string, data: RecordSellData): Promise<Transaction>;
   recordDividend(ownerId: string, data: RecordDividendData): Promise<Transaction>;
+  recordFee(ownerId: string, data: RecordFeeData): Promise<Transaction>;
+  recordInterest(ownerId: string, data: RecordInterestData): Promise<Transaction>;
+  recordTax(ownerId: string, data: RecordTaxData): Promise<Transaction>;
   recordCashAdjustment(ownerId: string, data: RecordCashAdjustmentData): Promise<Transaction>;
   listByPortfolioId(ownerId: string, portfolioId: string): Promise<Transaction[]>;
   listByCompanyId(ownerId: string, portfolioId: string, companyId: string): Promise<Transaction[]>;
+  /** Filtered, sorted (newest first), paginated read for the transaction history UI. */
+  listByPortfolioIdFiltered(
+    ownerId: string,
+    portfolioId: string,
+    filter: TransactionListFilter
+  ): Promise<TransactionPage>;
+  getById(ownerId: string, transactionId: string): Promise<Transaction | null>;
 }

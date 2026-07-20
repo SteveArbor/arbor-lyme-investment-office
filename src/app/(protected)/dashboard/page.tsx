@@ -1,15 +1,71 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { buildCompanyMonitoringSnapshots, composeAppServices } from "@/application/services";
+import {
+  buildCompanyMonitoringSnapshots,
+  buildPortfolioPerformanceData,
+  composeAppServices,
+} from "@/application/services";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
+import { cardClasses } from "@/components/ui/form-styles";
+import {
+  clickableCellLinkClasses,
+  clickableRowClasses,
+  tableBodyClasses,
+  tableClasses,
+  tableContainerClasses,
+  tableHeadClasses,
+} from "@/components/ui/table";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
+import { formatCurrency, formatSignedCurrency, gainLossClasses } from "@/lib/format";
 
 import { RATING_LABELS, THESIS_STATUS_LABELS } from "../companies/[id]/labels";
 
 export const metadata: Metadata = {
   title: "Dashboard — Arbor Lyme Capital",
 };
+
+interface PriorityAction {
+  companyId: string;
+  companyName: string;
+  reason: string;
+  weight: number;
+}
+
+function SummaryCard({
+  label,
+  value,
+  valueClassName = "text-neutral-900 dark:text-neutral-100",
+  subValue,
+  href,
+}: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+  subValue?: string;
+  href?: string;
+}) {
+  const content = (
+    <>
+      <p className="text-xs font-medium tracking-wide text-neutral-500 uppercase">{label}</p>
+      <p className={`mt-1 text-xl font-semibold ${valueClassName}`}>{value}</p>
+      {subValue ? (
+        <p className="mt-0.5 text-sm text-neutral-500 dark:text-neutral-400">{subValue}</p>
+      ) : null}
+    </>
+  );
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className={`${cardClasses} block transition hover:border-neutral-400 dark:hover:border-neutral-600`}
+      >
+        {content}
+      </Link>
+    );
+  }
+  return <div className={cardClasses}>{content}</div>;
+}
 
 export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
@@ -18,27 +74,164 @@ export default async function DashboardPage() {
   } = await supabase.auth.getUser();
 
   const services = composeAppServices(supabase);
-  const companies = await services.companyService.listCompanies(user!.id);
-  const snapshots = await buildCompanyMonitoringSnapshots(
-    services,
-    user!.id,
-    companies.map((company) => company.id)
+  const { companyService, portfolioService, tradingService, decisionService } = services;
+
+  const [companies, portfolios] = await Promise.all([
+    companyService.listCompanies(user!.id),
+    portfolioService.listPortfolios(user!.id),
+  ]);
+
+  const [snapshots, performanceByPortfolio] = await Promise.all([
+    buildCompanyMonitoringSnapshots(
+      services,
+      user!.id,
+      companies.map((company) => company.id)
+    ),
+    Promise.all(
+      portfolios.map((portfolio) =>
+        buildPortfolioPerformanceData(
+          { portfolioService, tradingService, decisionService },
+          user!.id,
+          portfolio.id
+        )
+      )
+    ),
+  ]);
+
+  // Every figure below is derived without a current price — the same "no
+  // invented data" rule EmptyStateCard documents. Unrealised gain and
+  // live total portfolio value require a price the platform never
+  // fetches or caches (docs/development-roadmap.md); those live on each
+  // portfolio's own Performance view where the user can mark prices for
+  // that session (Milestone 2.7 Part 1).
+  const totalCash = portfolios.reduce((sum, portfolio) => sum + portfolio.cash, 0);
+  const totalCostBasis = performanceByPortfolio.reduce(
+    (sum, data) => sum + data.holdings.reduce((s, h) => s + h.quantity * h.averageCost, 0),
+    0
   );
+  const totalHoldingsCount = performanceByPortfolio.reduce(
+    (sum, data) => sum + data.holdings.length,
+    0
+  );
+  const totalRealisedReturn = performanceByPortfolio.reduce(
+    (sum, data) =>
+      sum + data.realisedGainTotal + data.dividendsReceived - data.feesPaid - data.taxesPaid,
+    0
+  );
+  const currency = "GBP"; // dashboard aggregates across portfolios; per-portfolio currency shown on its own page
+
+  const priorityActions: PriorityAction[] = [];
+  for (const company of companies) {
+    const snapshot = snapshots.get(company.id);
+    if (!snapshot) continue;
+    if (snapshot.openJournalEntry) {
+      priorityActions.push({
+        companyId: company.id,
+        companyName: company.name,
+        reason: "Open journal entry needs follow-up",
+        weight: 0,
+      });
+    }
+    if (!snapshot.thesisStatus) {
+      priorityActions.push({
+        companyId: company.id,
+        companyName: company.name,
+        reason: "No investment thesis recorded yet",
+        weight: 1,
+      });
+    }
+    if (!snapshot.latestRating) {
+      priorityActions.push({
+        companyId: company.id,
+        companyName: company.name,
+        reason: "No Investment Rating generated yet",
+        weight: 2,
+      });
+    }
+  }
+  priorityActions.sort((a, b) => a.weight - b.weight);
+  const topActions = priorityActions.slice(0, 6);
 
   return (
-    <main id="main-content" className="mx-auto max-w-5xl px-4 py-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-          Monitoring Dashboard
-        </h1>
-      </div>
-      <p className="mt-2 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-        Per-company thesis status, valuation, and Investment Rating — assembled from research,
-        thesis, valuation, and decision, each already written once in its own domain.
+    <main id="main-content" className="mx-auto max-w-6xl px-4 py-8">
+      <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">Dashboard</h1>
+      <p className="mt-1 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
+        Your daily workspace — portfolio position, research coverage, and what needs attention next.
       </p>
 
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard
+          label="Cash"
+          value={formatCurrency(totalCash, currency)}
+          href={portfolios[0] ? `/portfolio/${portfolios[0].id}` : "/portfolio"}
+        />
+        <SummaryCard
+          label="Holdings value (at cost)"
+          value={formatCurrency(totalCostBasis, currency)}
+          subValue="Mark prices on a portfolio for live market value"
+          href={portfolios[0] ? `/portfolio/${portfolios[0].id}` : "/portfolio"}
+        />
+        <SummaryCard
+          label="Realised return"
+          value={formatSignedCurrency(totalRealisedReturn, currency)}
+          valueClassName={gainLossClasses(totalRealisedReturn)}
+          subValue="Realised gains + dividends − fees − taxes"
+        />
+        <SummaryCard
+          label="Unrealised gain"
+          value={totalHoldingsCount > 0 ? "Mark prices to see" : formatCurrency(0, currency)}
+          href={portfolios[0] ? `/portfolio/${portfolios[0].id}` : "/portfolio"}
+        />
+        <SummaryCard label="Holdings" value={String(totalHoldingsCount)} href="/portfolio" />
+        <SummaryCard label="Companies tracked" value={String(companies.length)} href="/companies" />
+        <SummaryCard
+          label="High priority actions"
+          value={String(priorityActions.length)}
+          valueClassName={
+            priorityActions.length > 0
+              ? "text-amber-700 dark:text-amber-400"
+              : "text-neutral-900 dark:text-neutral-100"
+          }
+        />
+        <SummaryCard label="Portfolios" value={String(portfolios.length)} href="/portfolio" />
+      </div>
+
+      {topActions.length > 0 ? (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+            High priority actions
+          </h2>
+          <div className="mt-3 space-y-2">
+            {topActions.map((action, index) => (
+              <Link
+                key={`${action.companyId}-${index}`}
+                href={`/companies/${action.companyId}`}
+                className={`${cardClasses} flex items-center justify-between gap-2 transition hover:border-neutral-400 dark:hover:border-neutral-600`}
+              >
+                <span className="font-medium text-neutral-900 dark:text-neutral-100">
+                  {action.companyName}
+                </span>
+                <span className="text-sm text-neutral-600 dark:text-neutral-400">
+                  {action.reason}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="mt-8 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
+          Company watchlist
+        </h2>
+        <p className="max-w-md text-sm text-neutral-600 dark:text-neutral-400">
+          Thesis status, valuation, and Investment Rating — assembled from research, thesis,
+          valuation, and decision.
+        </p>
+      </div>
+
       {companies.length === 0 ? (
-        <div className="mt-8 rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
+        <div className="mt-4 rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
           <p className="text-sm text-neutral-600 dark:text-neutral-400">
             No companies tracked yet.{" "}
             <Link href="/companies/new" className="underline">
@@ -48,46 +241,78 @@ export default async function DashboardPage() {
           </p>
         </div>
       ) : (
-        <div className="mt-6 overflow-x-auto rounded-lg border border-neutral-200 dark:border-neutral-800">
-          <table className="w-full min-w-max text-left text-sm">
-            <thead className="border-b border-neutral-200 bg-neutral-50 text-xs font-medium tracking-wide text-neutral-600 uppercase dark:border-neutral-800 dark:bg-neutral-900 dark:text-neutral-400">
+        <div className={`mt-3 ${tableContainerClasses}`}>
+          <table className={tableClasses}>
+            <thead className={tableHeadClasses}>
               <tr>
-                <th className="px-4 py-3">Company</th>
-                <th className="px-4 py-3">Thesis</th>
-                <th className="px-4 py-3">Fair value</th>
-                <th className="px-4 py-3">Rating</th>
-                <th className="px-4 py-3">Open journal entry</th>
+                <th scope="col" className="px-4 py-3">
+                  Company
+                </th>
+                <th scope="col" className="px-4 py-3">
+                  Thesis
+                </th>
+                <th scope="col" className="px-4 py-3">
+                  Fair value
+                </th>
+                <th scope="col" className="px-4 py-3">
+                  Rating
+                </th>
+                <th scope="col" className="px-4 py-3">
+                  Open journal entry
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            <tbody className={tableBodyClasses}>
               {companies.map((company) => {
                 const snapshot = snapshots.get(company.id);
                 return (
-                  <tr key={company.id} className="hover:bg-neutral-50 dark:hover:bg-neutral-900/50">
-                    <td className="px-4 py-3">
+                  <tr key={company.id} className={clickableRowClasses}>
+                    <td className="p-0">
                       <Link
                         href={`/companies/${company.id}`}
-                        className="font-medium text-neutral-900 hover:underline dark:text-neutral-100"
+                        className={`${clickableCellLinkClasses} font-medium text-neutral-900 dark:text-neutral-100`}
                       >
                         {company.name}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {snapshot?.thesisStatus
-                        ? THESIS_STATUS_LABELS[snapshot.thesisStatus]
-                        : "No thesis yet"}
+                    <td className="p-0">
+                      <Link
+                        href={`/companies/${company.id}`}
+                        className={`${clickableCellLinkClasses} text-neutral-600 dark:text-neutral-400`}
+                      >
+                        {snapshot?.thesisStatus
+                          ? THESIS_STATUS_LABELS[snapshot.thesisStatus]
+                          : "No thesis yet"}
+                      </Link>
                     </td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {snapshot?.blendedFairValue !== null &&
-                      snapshot?.blendedFairValue !== undefined
-                        ? snapshot.blendedFairValue.toFixed(2)
-                        : "Not yet valued"}
+                    <td className="p-0">
+                      <Link
+                        href={`/companies/${company.id}`}
+                        className={`${clickableCellLinkClasses} text-neutral-600 dark:text-neutral-400`}
+                      >
+                        {snapshot?.blendedFairValue !== null &&
+                        snapshot?.blendedFairValue !== undefined
+                          ? snapshot.blendedFairValue.toFixed(2)
+                          : "Not yet valued"}
+                      </Link>
                     </td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {snapshot?.latestRating ? RATING_LABELS[snapshot.latestRating] : "Not rated"}
+                    <td className="p-0">
+                      <Link
+                        href={`/companies/${company.id}`}
+                        className={`${clickableCellLinkClasses} text-neutral-600 dark:text-neutral-400`}
+                      >
+                        {snapshot?.latestRating
+                          ? RATING_LABELS[snapshot.latestRating]
+                          : "Not rated"}
+                      </Link>
                     </td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {snapshot?.openJournalEntry ? "Yes" : ""}
+                    <td className="p-0">
+                      <Link
+                        href={`/companies/${company.id}`}
+                        className={`${clickableCellLinkClasses} text-neutral-600 dark:text-neutral-400`}
+                      >
+                        {snapshot?.openJournalEntry ? "Yes" : ""}
+                      </Link>
                     </td>
                   </tr>
                 );

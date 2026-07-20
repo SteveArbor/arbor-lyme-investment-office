@@ -10,10 +10,25 @@ class FakeAuditRepository implements AuditRepository {
   async insert(record: AuditRecord): Promise<void> {
     this.inserted.push(record);
   }
+
+  async listByEntity(actorId: string, entityType: string, entityId: string): Promise<AuditRecord[]> {
+    return this.inserted
+      .filter(
+        (record) =>
+          record.actorId === actorId &&
+          record.entityType === entityType &&
+          record.entityId === entityId
+      )
+      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt));
+  }
 }
 
 class FailingAuditRepository implements AuditRepository {
   async insert(): Promise<void> {
+    throw new Error("connection lost");
+  }
+
+  async listByEntity(): Promise<AuditRecord[]> {
     throw new Error("connection lost");
   }
 }
@@ -94,5 +109,22 @@ describe("AuditService", () => {
     );
 
     errorSpy.mockRestore();
+  });
+
+  it("returns an entity's audit history newest first", async () => {
+    const repo = new FakeAuditRepository();
+    const service = new AuditService(repo);
+
+    await service.record({
+      actorId: "user-1",
+      eventType: "TransactionRecorded",
+      entityType: "transaction",
+      entityId: "txn-1",
+      outcome: "success",
+    });
+
+    const history = await service.getHistory("user-1", "transaction", "txn-1");
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ eventType: "TransactionRecorded", entityId: "txn-1" });
   });
 });

@@ -1,6 +1,6 @@
 import { logger } from "@/lib/logger";
 
-import { type AuditRecordInput, sanitizeAuditMetadata } from "./model";
+import { type AuditRecord, type AuditRecordInput, sanitizeAuditMetadata } from "./model";
 import type { AuditRepository } from "./repository";
 
 /**
@@ -38,5 +38,10 @@ export class AuditService {
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /** Newest first. RLS scopes this to the caller's own events regardless of `actorId` passed. */
+  async getHistory(actorId: string, entityType: string, entityId: string): Promise<AuditRecord[]> {
+    return this.repository.listByEntity(actorId, entityType, entityId);
   }
 }

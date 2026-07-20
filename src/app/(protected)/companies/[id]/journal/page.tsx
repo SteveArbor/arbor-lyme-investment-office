@@ -8,7 +8,7 @@ import { CloseEntryForm } from "./close-entry-form";
 import { OpenEntryForm } from "./open-entry-form";
 
 export const metadata: Metadata = {
-  title: "Decision journal — Arbor Lyme Capital",
+  title: "Decision Journal — Arbor Lyme Capital",
 };
 
 export default async function JournalPage({ params }: { params: Promise<{ id: string }> }) {

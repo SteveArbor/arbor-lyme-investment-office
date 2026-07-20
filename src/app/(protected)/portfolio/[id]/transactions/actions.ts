@@ -47,6 +47,11 @@ function revalidatePortfolioPaths(portfolioId: string) {
   revalidatePath(`/portfolio/${portfolioId}`);
 }
 
+function optionalString(formData: FormData, key: string): string | null {
+  const value = formData.get(key);
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
 export async function recordBuyAction(
   portfolioId: string,
   _prevState: ActionFormState,
@@ -60,11 +65,17 @@ export async function recordBuyAction(
     quantity: Number(formData.get("quantity")),
     pricePerUnit: Number(formData.get("pricePerUnit")),
     occurredAt: new Date(String(formData.get("occurredAt"))).toISOString(),
-    notes: formData.get("notes") || null,
+    notes: optionalString(formData, "notes"),
   };
 
   try {
-    await services.tradingService.recordBuy(user.id, portfolioId, input, randomUUID());
+    const { event } = await services.tradingService.recordBuy(
+      user.id,
+      portfolioId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
   } catch (error) {
     return fieldError(error, { action: "recordBuyAction", portfolioId, userId: user.id });
   }
@@ -86,11 +97,17 @@ export async function recordSellAction(
     quantity: Number(formData.get("quantity")),
     pricePerUnit: Number(formData.get("pricePerUnit")),
     occurredAt: new Date(String(formData.get("occurredAt"))).toISOString(),
-    notes: formData.get("notes") || null,
+    notes: optionalString(formData, "notes"),
   };
 
   try {
-    await services.tradingService.recordSell(user.id, portfolioId, input, randomUUID());
+    const { event } = await services.tradingService.recordSell(
+      user.id,
+      portfolioId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
   } catch (error) {
     return fieldError(error, { action: "recordSellAction", portfolioId, userId: user.id });
   }
@@ -111,13 +128,115 @@ export async function recordDividendAction(
     companyId: formData.get("companyId"),
     amount: Number(formData.get("amount")),
     occurredAt: new Date(String(formData.get("occurredAt"))).toISOString(),
-    notes: formData.get("notes") || null,
+    notes: optionalString(formData, "notes"),
+    reference: optionalString(formData, "reference"),
   };
 
   try {
-    await services.tradingService.recordDividend(user.id, portfolioId, input, randomUUID());
+    const { event } = await services.tradingService.recordDividend(
+      user.id,
+      portfolioId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
   } catch (error) {
     return fieldError(error, { action: "recordDividendAction", portfolioId, userId: user.id });
+  }
+
+  revalidatePortfolioPaths(portfolioId);
+  return { error: null, success: true };
+}
+
+export async function recordFeeAction(
+  portfolioId: string,
+  _prevState: ActionFormState,
+  formData: FormData
+): Promise<ActionFormState> {
+  const { user, services } = await requireUserAndServices();
+  if (!user) return { error: "You must be signed in.", success: false };
+
+  const input = {
+    companyId: optionalString(formData, "companyId"),
+    amount: Number(formData.get("amount")),
+    occurredAt: new Date(String(formData.get("occurredAt"))).toISOString(),
+    notes: optionalString(formData, "notes"),
+    reference: optionalString(formData, "reference"),
+  };
+
+  try {
+    const { event } = await services.tradingService.recordFee(
+      user.id,
+      portfolioId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
+  } catch (error) {
+    return fieldError(error, { action: "recordFeeAction", portfolioId, userId: user.id });
+  }
+
+  revalidatePortfolioPaths(portfolioId);
+  return { error: null, success: true };
+}
+
+export async function recordInterestAction(
+  portfolioId: string,
+  _prevState: ActionFormState,
+  formData: FormData
+): Promise<ActionFormState> {
+  const { user, services } = await requireUserAndServices();
+  if (!user) return { error: "You must be signed in.", success: false };
+
+  const input = {
+    amount: Number(formData.get("amount")),
+    occurredAt: new Date(String(formData.get("occurredAt"))).toISOString(),
+    notes: optionalString(formData, "notes"),
+    reference: optionalString(formData, "reference"),
+  };
+
+  try {
+    const { event } = await services.tradingService.recordInterest(
+      user.id,
+      portfolioId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
+  } catch (error) {
+    return fieldError(error, { action: "recordInterestAction", portfolioId, userId: user.id });
+  }
+
+  revalidatePortfolioPaths(portfolioId);
+  return { error: null, success: true };
+}
+
+export async function recordTaxAction(
+  portfolioId: string,
+  _prevState: ActionFormState,
+  formData: FormData
+): Promise<ActionFormState> {
+  const { user, services } = await requireUserAndServices();
+  if (!user) return { error: "You must be signed in.", success: false };
+
+  const input = {
+    companyId: optionalString(formData, "companyId"),
+    amount: Number(formData.get("amount")),
+    occurredAt: new Date(String(formData.get("occurredAt"))).toISOString(),
+    notes: optionalString(formData, "notes"),
+    reference: optionalString(formData, "reference"),
+  };
+
+  try {
+    const { event } = await services.tradingService.recordTax(
+      user.id,
+      portfolioId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
+  } catch (error) {
+    return fieldError(error, { action: "recordTaxAction", portfolioId, userId: user.id });
   }
 
   revalidatePortfolioPaths(portfolioId);
@@ -133,13 +252,21 @@ export async function recordCashAdjustmentAction(
   if (!user) return { error: "You must be signed in.", success: false };
 
   const input = {
+    category: formData.get("category"),
     amount: Number(formData.get("amount")),
     occurredAt: new Date(String(formData.get("occurredAt"))).toISOString(),
-    notes: formData.get("notes") || null,
+    notes: optionalString(formData, "notes"),
+    reference: optionalString(formData, "reference"),
   };
 
   try {
-    await services.tradingService.recordCashAdjustment(user.id, portfolioId, input, randomUUID());
+    const { event } = await services.tradingService.recordCashAdjustment(
+      user.id,
+      portfolioId,
+      input,
+      randomUUID()
+    );
+    await services.eventBus.publish(event);
   } catch (error) {
     return fieldError(error, {
       action: "recordCashAdjustmentAction",

@@ -11,10 +11,17 @@ import {
   buyInputSchema,
   cashAdjustmentInputSchema,
   dividendInputSchema,
+  feeInputSchema,
+  interestInputSchema,
   sellInputSchema,
+  taxInputSchema,
   type Transaction,
 } from "./model";
-import type { TransactionRepository } from "./repository";
+import type {
+  TransactionListFilter,
+  TransactionPage,
+  TransactionRepository,
+} from "./repository";
 
 export interface TransactionRecordedPayload {
   transactionId: string;
@@ -26,17 +33,18 @@ export interface TransactionRecordedPayload {
 
 /**
  * The transaction ledger's business logic (docs/development-roadmap.md
- * Phase 2, item 7). Framework-independent. Trading is downstream of
- * Portfolio: it still reads `HoldingRepository`/`PortfolioRepository` for a
- * pre-flight check (sufficient cash, sufficient holding to sell) so a
- * malformed request fails fast with a clear message before a round trip —
- * but that check is advisory UX only. The resulting holding quantity,
- * average cost, and any realised gain are no longer computed here: they're
- * computed inside the same locked database call that writes them
- * (docs/implementation/staff-engineer-review.md findings H1/H2), from
- * state read after the lock is held, which is what makes the pre-flight
- * check here safe to be stale under concurrency — the database re-checks
- * authoritatively regardless of what this method already decided.
+ * Phase 2, item 7; cash management expanded Milestone 2.7, ADR 0026).
+ * Framework-independent. Trading is downstream of Portfolio: it still
+ * reads `HoldingRepository`/`PortfolioRepository` for a pre-flight check
+ * (sufficient cash, sufficient holding to sell) so a malformed request
+ * fails fast with a clear message before a round trip — but that check is
+ * advisory UX only. The resulting holding quantity, average cost, and any
+ * realised gain are no longer computed here: they're computed inside the
+ * same locked database call that writes them (docs/implementation/
+ * staff-engineer-review.md findings H1/H2), from state read after the
+ * lock is held, which is what makes the pre-flight check here safe to be
+ * stale under concurrency — the database re-checks authoritatively
+ * regardless of what this method already decided.
  * `TransactionRepository`'s implementation maps the database's own
  * rejection (a concurrent sale making this buy's pre-flight check
  * outdated, for instance) to the same typed errors this method throws
@@ -138,7 +146,7 @@ export class TradingService {
         parsed.error.flatten().fieldErrors as Record<string, string[]>
       );
     }
-    const { companyId, amount, occurredAt, notes } = parsed.data;
+    const { companyId, amount, occurredAt, notes, reference } = parsed.data;
 
     const portfolio = await this.portfolios.getById(ownerId, portfolioId);
     if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
@@ -149,6 +157,111 @@ export class TradingService {
       amount,
       occurredAt,
       notes: notes ?? null,
+      reference: reference ?? null,
+      idempotencyKey: correlationId,
+    });
+
+    return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
+  }
+
+  async recordFee(
+    ownerId: string,
+    portfolioId: string,
+    input: unknown,
+    correlationId: string
+  ): Promise<{ transaction: Transaction; event: DomainEvent<TransactionRecordedPayload> }> {
+    const parsed = feeInputSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new ValidationError(
+        "Invalid fee transaction",
+        parsed.error.flatten().fieldErrors as Record<string, string[]>
+      );
+    }
+    const { companyId, amount, occurredAt, notes, reference } = parsed.data;
+
+    const portfolio = await this.portfolios.getById(ownerId, portfolioId);
+    if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
+
+    if (amount > portfolio.cash) {
+      throw new ConflictError("Insufficient cash to record this fee", {
+        amount: [`Requires ${amount}, portfolio has ${portfolio.cash} available`],
+      });
+    }
+
+    const transaction = await this.transactions.recordFee(ownerId, {
+      portfolioId,
+      companyId: companyId ?? null,
+      amount,
+      occurredAt,
+      notes: notes ?? null,
+      reference: reference ?? null,
+      idempotencyKey: correlationId,
+    });
+
+    return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
+  }
+
+  async recordInterest(
+    ownerId: string,
+    portfolioId: string,
+    input: unknown,
+    correlationId: string
+  ): Promise<{ transaction: Transaction; event: DomainEvent<TransactionRecordedPayload> }> {
+    const parsed = interestInputSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new ValidationError(
+        "Invalid interest transaction",
+        parsed.error.flatten().fieldErrors as Record<string, string[]>
+      );
+    }
+    const { amount, occurredAt, notes, reference } = parsed.data;
+
+    const portfolio = await this.portfolios.getById(ownerId, portfolioId);
+    if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
+
+    const transaction = await this.transactions.recordInterest(ownerId, {
+      portfolioId,
+      amount,
+      occurredAt,
+      notes: notes ?? null,
+      reference: reference ?? null,
+      idempotencyKey: correlationId,
+    });
+
+    return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
+  }
+
+  async recordTax(
+    ownerId: string,
+    portfolioId: string,
+    input: unknown,
+    correlationId: string
+  ): Promise<{ transaction: Transaction; event: DomainEvent<TransactionRecordedPayload> }> {
+    const parsed = taxInputSchema.safeParse(input);
+    if (!parsed.success) {
+      throw new ValidationError(
+        "Invalid tax transaction",
+        parsed.error.flatten().fieldErrors as Record<string, string[]>
+      );
+    }
+    const { companyId, amount, occurredAt, notes, reference } = parsed.data;
+
+    const portfolio = await this.portfolios.getById(ownerId, portfolioId);
+    if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
+
+    if (amount > portfolio.cash) {
+      throw new ConflictError("Insufficient cash to record this tax payment", {
+        amount: [`Requires ${amount}, portfolio has ${portfolio.cash} available`],
+      });
+    }
+
+    const transaction = await this.transactions.recordTax(ownerId, {
+      portfolioId,
+      companyId: companyId ?? null,
+      amount,
+      occurredAt,
+      notes: notes ?? null,
+      reference: reference ?? null,
       idempotencyKey: correlationId,
     });
 
@@ -168,22 +281,32 @@ export class TradingService {
         parsed.error.flatten().fieldErrors as Record<string, string[]>
       );
     }
-    const { amount, occurredAt, notes } = parsed.data;
+    const { category, amount, occurredAt, notes, reference } = parsed.data;
 
     const portfolio = await this.portfolios.getById(ownerId, portfolioId);
     if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
 
-    if (portfolio.cash + amount < 0) {
-      throw new ConflictError("Cash adjustment would make the portfolio balance negative", {
-        amount: [`Portfolio has ${portfolio.cash}, cannot adjust by ${amount}`],
+    // deposit/withdrawal carry a positive "how much" from the UI (see
+    // cash-adjustment-form.tsx) with the category implying direction —
+    // correction/other pass the caller's own signed amount through. This
+    // pre-flight mirrors exactly what the database will do authoritatively
+    // (supabase/migrations/20260720000001_cash_management_and_performance.sql).
+    const signedAmount =
+      category === "deposit" ? amount : category === "withdrawal" ? -amount : amount;
+
+    if (portfolio.cash + signedAmount < 0) {
+      throw new ConflictError("This adjustment would make the portfolio balance negative", {
+        amount: [`Portfolio has ${portfolio.cash}, cannot adjust by ${signedAmount}`],
       });
     }
 
     const transaction = await this.transactions.recordCashAdjustment(ownerId, {
       portfolioId,
+      category,
       amount,
       occurredAt,
       notes: notes ?? null,
+      reference: reference ?? null,
       idempotencyKey: correlationId,
     });
 
@@ -200,6 +323,21 @@ export class TradingService {
     companyId: string
   ): Promise<Transaction[]> {
     return this.transactions.listByCompanyId(ownerId, portfolioId, companyId);
+  }
+
+  /** Filtered/paginated read backing the Transactions history UI. */
+  async listTransactionsFiltered(
+    ownerId: string,
+    portfolioId: string,
+    filter: TransactionListFilter
+  ): Promise<TransactionPage> {
+    return this.transactions.listByPortfolioIdFiltered(ownerId, portfolioId, filter);
+  }
+
+  async getTransaction(ownerId: string, transactionId: string): Promise<Transaction> {
+    const transaction = await this.transactions.getById(ownerId, transactionId);
+    if (!transaction) throw new NotFoundError("Transaction", transactionId);
+    return transaction;
   }
 
   private toEvent(

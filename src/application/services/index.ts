@@ -7,3 +7,9 @@ export type {
   MonitoringDependencies,
 } from "./monitoring";
 export { buildCompanyMonitoringSnapshot, buildCompanyMonitoringSnapshots } from "./monitoring";
+export type {
+  PortfolioHoldingData,
+  PortfolioPerformanceData,
+  PortfolioPerformanceDependencies,
+} from "./portfolio-performance";
+export { buildPortfolioPerformanceData } from "./portfolio-performance";
