@@ -28,6 +28,14 @@ figure a domain service already owns, and it will never place a trade. The
 long-term goal is a durable, multi-year tool built to be trusted, not a
 minimum-viable trading app.
 
+The intended long-term evolution (`CLAUDE.md`'s "Long Term Vision"):
+Foundation → Investment Research Platform → Production Readiness → AI
+Research Assistant → Market Intelligence → Professional Reporting →
+Automation → Institutional / Family Office capabilities. The first three
+stages are complete (see below); everything from "AI Research Assistant"
+onward maps onto the Outstanding Roadmap phases further down this
+document, not a separate plan.
+
 ---
 
 # Completed Milestones
