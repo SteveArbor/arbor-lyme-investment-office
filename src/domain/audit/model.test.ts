@@ -64,4 +64,35 @@ describe("sanitizeAuditMetadata", () => {
   it("returns an empty object for empty input", () => {
     expect(sanitizeAuditMetadata({})).toEqual({});
   });
+
+  it("strips sensitive keys from objects nested inside an array (H3 regression)", () => {
+    const result = sanitizeAuditMetadata({
+      items: [
+        { id: 1, sessionToken: "abc", ok: true },
+        { id: 2, password: "hunter2" },
+      ],
+    });
+
+    expect(result).toEqual({
+      items: [{ id: 1, ok: true }, { id: 2 }],
+    });
+  });
+
+  it("strips sensitive keys through arrays nested inside arrays", () => {
+    const result = sanitizeAuditMetadata({
+      groups: [[{ apiKey: "x", keep: "y" }], [{ keep: "z" }]],
+    });
+
+    expect(result).toEqual({
+      groups: [[{ keep: "y" }], [{ keep: "z" }]],
+    });
+  });
+
+  it("leaves an array of primitives untouched even when nested under an object", () => {
+    const result = sanitizeAuditMetadata({
+      user: { name: "Alice", tags: ["a", "b", 3] },
+    });
+
+    expect(result).toEqual({ user: { name: "Alice", tags: ["a", "b", 3] } });
+  });
 });

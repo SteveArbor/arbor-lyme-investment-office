@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { NotFoundError, ValidationError } from "@/domain/shared";
 
-import type { Holding, HoldingPosition, Portfolio, PortfolioInput, PortfolioUpdate } from "./model";
+import type { Holding, Portfolio, PortfolioInput, PortfolioUpdate } from "./model";
 import type { HoldingRepository, PortfolioRepository } from "./repository";
 import { PortfolioService } from "./service";
 
@@ -62,32 +62,12 @@ class FakeHoldingRepository implements HoldingRepository {
     return this.rows.filter((row) => row.ownerId === ownerId && row.portfolioId === portfolioId);
   }
 
-  async upsertPosition(
-    ownerId: string,
-    portfolioId: string,
-    companyId: string,
-    position: HoldingPosition
-  ): Promise<Holding> {
-    const existing = await this.getByCompanyId(ownerId, portfolioId, companyId);
-    if (existing) {
-      const updated: Holding = { ...existing, ...position, updatedAt: new Date().toISOString() };
-      const index = this.rows.findIndex((row) => row.id === existing.id);
-      this.rows[index] = updated;
-      return updated;
-    }
+  /** Test-only seam: Trading's atomic RPC is what writes quantity/averageCost for real. */
+  seed(holding: Omit<Holding, "id" | "createdAt" | "updatedAt">): Holding {
     const now = new Date().toISOString();
-    const holding: Holding = {
-      id: `holding-${nextId++}`,
-      ownerId,
-      portfolioId,
-      companyId,
-      targetAllocationPercent: 0,
-      ...position,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.rows.push(holding);
-    return holding;
+    const row: Holding = { id: `holding-${nextId++}`, createdAt: now, updatedAt: now, ...holding };
+    this.rows.push(row);
+    return row;
   }
 
   async updateTargetAllocation(
@@ -103,11 +83,6 @@ class FakeHoldingRepository implements HoldingRepository {
       updatedAt: new Date().toISOString(),
     };
     return this.rows[index];
-  }
-
-  async delete(ownerId: string, holdingId: string): Promise<void> {
-    const index = this.rows.findIndex((row) => row.ownerId === ownerId && row.id === holdingId);
-    if (index !== -1) this.rows.splice(index, 1);
   }
 }
 
@@ -137,31 +112,43 @@ describe("PortfolioService", () => {
     await expect(service.getPortfolio("user-1", "missing")).rejects.toBeInstanceOf(NotFoundError);
   });
 
-  it("records a position and later reflects updated quantity/average cost on the same holding", async () => {
-    const service = buildService();
+  it("updates a holding's target allocation without touching quantity/average cost", async () => {
+    const holdings = new FakeHoldingRepository();
+    const service = new PortfolioService(new FakePortfolioRepository(), holdings);
     const { portfolio } = await service.createPortfolio(
       "user-1",
       { name: "Core", cash: 10_000 },
       "corr-1"
     );
     const companyId = "11111111-1111-4111-8111-111111111111";
-
-    const first = await service.recordPosition("user-1", portfolio.id, companyId, {
+    const seeded = holdings.seed({
+      ownerId: "user-1",
+      portfolioId: portfolio.id,
+      companyId,
       quantity: 10,
       averageCost: 20,
+      targetAllocationPercent: 0,
     });
-    expect(first.quantity).toBe(10);
 
-    const second = await service.recordPosition("user-1", portfolio.id, companyId, {
-      quantity: 15,
-      averageCost: 22,
+    const updated = await service.updateTargetAllocation("user-1", seeded.id, {
+      targetAllocationPercent: 0.2,
     });
-    expect(second.id).toBe(first.id);
-    expect(second.quantity).toBe(15);
-    expect(second.averageCost).toBe(22);
 
-    const holdings = await service.listHoldings("user-1", portfolio.id);
-    expect(holdings).toHaveLength(1);
+    expect(updated.targetAllocationPercent).toBe(0.2);
+    expect(updated.quantity).toBe(10);
+    expect(updated.averageCost).toBe(20);
+  });
+
+  it("PortfolioService/HoldingRepository expose no path that writes quantity or average cost", () => {
+    // Structural regression for staff-engineer-review.md finding C1: Trading's
+    // atomic RPCs are the only writer of these two fields. If a future change
+    // reintroduces a direct-write method here, it would be dead on arrival at
+    // the database (the grants in
+    // supabase/migrations/20260719000015_transaction_integrity_hardening.sql
+    // don't permit it) — this test just keeps that intent visible at the
+    // TypeScript layer too, not only in SQL.
+    const service = buildService();
+    expect("recordPosition" in service).toBe(false);
   });
 
   it("determines a PortfolioAction without touching any other domain's data", async () => {

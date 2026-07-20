@@ -1,4 +1,5 @@
 import {
+  ConflictError,
   createDomainEvent,
   type DomainEvent,
   NotFoundError,
@@ -96,7 +97,7 @@ export class JournalService {
 
     const existing = await this.getEntry(ownerId, entryId);
     if (existing.status === "closed") {
-      throw new ValidationError("This journal entry is already closed", {
+      throw new ConflictError("This journal entry is already closed", {
         status: ["An entry can only be closed once"],
       });
     }

@@ -5,8 +5,9 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { composeAppServices } from "@/application/services";
-import { ValidationError } from "@/domain/shared";
+import { UserFacingError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
+import { logger } from "@/lib/logger";
 
 export interface ActionFormState {
   error: string | null;
@@ -43,12 +44,18 @@ export async function updateThesisAction(
     );
     await eventBus.publish(event);
   } catch (error) {
-    if (error instanceof ValidationError) {
+    if (error instanceof UserFacingError) {
       return {
-        error: Object.values(error.fieldErrors).flat()[0] ?? "Please check the highlighted fields.",
+        error: Object.values(error.fieldErrors).flat()[0] ?? error.message,
         success: false,
       };
     }
+    logger.error("Server Action failed unexpectedly", {
+      action: "updateThesisAction",
+      companyId,
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { error: "Something went wrong. Please try again.", success: false };
   }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NotFoundError, ValidationError } from "@/domain/shared";
+import { ConflictError, NotFoundError, ValidationError } from "@/domain/shared";
 
 import type { JournalEntry, JournalEntryCloseInput, JournalEntryOpenInput } from "./model";
 import type { JournalRepository } from "./repository";
@@ -119,7 +119,7 @@ describe("JournalService", () => {
     expect(closed.event.type).toBe("JournalEntryClosed");
   });
 
-  it("rejects closing an entry that is already closed", async () => {
+  it("rejects closing an entry that is already closed with a ConflictError", async () => {
     const service = new JournalService(new FakeJournalRepository());
     const opened = await service.openEntry("user-1", validOpenInput, "corr-1");
     const closeInput = {
@@ -131,7 +131,7 @@ describe("JournalService", () => {
 
     await expect(
       service.closeEntry("user-1", opened.entry.id, closeInput, "corr-3")
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("throws NotFoundError for an unknown entry", async () => {

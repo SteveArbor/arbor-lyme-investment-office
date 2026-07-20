@@ -57,13 +57,6 @@ export interface Holding {
   updatedAt: string;
 }
 
-export const holdingPositionSchema = z.object({
-  quantity: z.number().min(0),
-  averageCost: z.number().min(0),
-});
-
-export type HoldingPosition = z.infer<typeof holdingPositionSchema>;
-
 export const holdingTargetAllocationSchema = z.object({
   targetAllocationPercent: z.number().min(0).max(1),
 });

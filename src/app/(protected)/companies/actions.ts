@@ -5,8 +5,9 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 
 import { composeAppServices } from "@/application/services";
-import { ValidationError } from "@/domain/shared";
+import { UserFacingError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
+import { logger } from "@/lib/logger";
 
 export interface CompanyFormState {
   error: string | null;
@@ -45,11 +46,16 @@ export async function createCompanyAction(
     const { company } = await companyService.createCompany(user.id, input, randomUUID());
     companyId = company.id;
   } catch (error) {
-    if (error instanceof ValidationError) {
+    if (error instanceof UserFacingError) {
       return {
-        error: Object.values(error.fieldErrors).flat()[0] ?? "Please check the form and try again.",
+        error: Object.values(error.fieldErrors).flat()[0] ?? error.message,
       };
     }
+    logger.error("Server Action failed unexpectedly", {
+      action: "createCompanyAction",
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { error: "Something went wrong. Please try again." };
   }
 

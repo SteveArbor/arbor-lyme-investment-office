@@ -1,5 +1,6 @@
 import type { HoldingRepository, PortfolioRepository } from "@/domain/portfolio";
 import {
+  ConflictError,
   createDomainEvent,
   type DomainEvent,
   NotFoundError,
@@ -8,8 +9,6 @@ import {
 
 import {
   buyInputSchema,
-  calculateRealisedGain,
-  calculateWeightedAverageCost,
   cashAdjustmentInputSchema,
   dividendInputSchema,
   sellInputSchema,
@@ -28,12 +27,20 @@ export interface TransactionRecordedPayload {
 /**
  * The transaction ledger's business logic (docs/development-roadmap.md
  * Phase 2, item 7). Framework-independent. Trading is downstream of
- * Portfolio: it still reads `HoldingRepository`/`PortfolioRepository` to
- * validate (sufficient cash, sufficient holding to sell) and to compute
- * the resulting average cost/realised gain via the pure functions below —
- * but the actual write is a single atomic call into
- * `TransactionRepository` (Phase 2 Architecture Review finding 4.1), never
- * three separate writes this service could partially apply.
+ * Portfolio: it still reads `HoldingRepository`/`PortfolioRepository` for a
+ * pre-flight check (sufficient cash, sufficient holding to sell) so a
+ * malformed request fails fast with a clear message before a round trip —
+ * but that check is advisory UX only. The resulting holding quantity,
+ * average cost, and any realised gain are no longer computed here: they're
+ * computed inside the same locked database call that writes them
+ * (docs/implementation/staff-engineer-review.md findings H1/H2), from
+ * state read after the lock is held, which is what makes the pre-flight
+ * check here safe to be stale under concurrency — the database re-checks
+ * authoritatively regardless of what this method already decided.
+ * `TransactionRepository`'s implementation maps the database's own
+ * rejection (a concurrent sale making this buy's pre-flight check
+ * outdated, for instance) to the same typed errors this method throws
+ * directly, so a caller never needs to know which layer caught it.
  */
 export class TradingService {
   constructor(
@@ -62,19 +69,10 @@ export class TradingService {
 
     const cost = quantity * pricePerUnit;
     if (cost > portfolio.cash) {
-      throw new ValidationError("Insufficient cash for this purchase", {
+      throw new ConflictError("Insufficient cash for this purchase", {
         amount: [`Requires ${cost}, portfolio has ${portfolio.cash} available`],
       });
     }
-
-    const existing = await this.holdings.getByCompanyId(ownerId, portfolioId, companyId);
-    const newQuantity = (existing?.quantity ?? 0) + quantity;
-    const newAverageCost = calculateWeightedAverageCost(
-      existing?.quantity ?? 0,
-      existing?.averageCost ?? 0,
-      quantity,
-      pricePerUnit
-    );
 
     const transaction = await this.transactions.recordBuy(ownerId, {
       portfolioId,
@@ -83,8 +81,7 @@ export class TradingService {
       pricePerUnit,
       occurredAt,
       notes: notes ?? null,
-      newHoldingQuantity: newQuantity,
-      newHoldingAverageCost: newAverageCost,
+      idempotencyKey: correlationId,
     });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
@@ -110,13 +107,10 @@ export class TradingService {
 
     const existing = await this.holdings.getByCompanyId(ownerId, portfolioId, companyId);
     if (!existing || existing.quantity < quantity) {
-      throw new ValidationError("Insufficient holding to sell", {
+      throw new ConflictError("Insufficient holding to sell", {
         quantity: [`Holding has ${existing?.quantity ?? 0}, cannot sell ${quantity}`],
       });
     }
-
-    const realisedGain = calculateRealisedGain(quantity, pricePerUnit, existing.averageCost);
-    const newQuantity = existing.quantity - quantity;
 
     const transaction = await this.transactions.recordSell(ownerId, {
       portfolioId,
@@ -125,9 +119,7 @@ export class TradingService {
       pricePerUnit,
       occurredAt,
       notes: notes ?? null,
-      newHoldingQuantity: newQuantity,
-      newHoldingAverageCost: newQuantity > 0 ? existing.averageCost : 0,
-      realisedGain,
+      idempotencyKey: correlationId,
     });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
@@ -157,6 +149,7 @@ export class TradingService {
       amount,
       occurredAt,
       notes: notes ?? null,
+      idempotencyKey: correlationId,
     });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };
@@ -181,7 +174,7 @@ export class TradingService {
     if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
 
     if (portfolio.cash + amount < 0) {
-      throw new ValidationError("Cash adjustment would make the portfolio balance negative", {
+      throw new ConflictError("Cash adjustment would make the portfolio balance negative", {
         amount: [`Portfolio has ${portfolio.cash}, cannot adjust by ${amount}`],
       });
     }
@@ -191,6 +184,7 @@ export class TradingService {
       amount,
       occurredAt,
       notes: notes ?? null,
+      idempotencyKey: correlationId,
     });
 
     return { transaction, event: this.toEvent(transaction, correlationId, ownerId) };

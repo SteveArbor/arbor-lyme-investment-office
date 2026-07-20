@@ -7,7 +7,6 @@ import {
 
 import {
   type Holding,
-  holdingPositionSchema,
   holdingTargetAllocationSchema,
   type Portfolio,
   portfolioSchema,
@@ -110,30 +109,6 @@ export class PortfolioService {
     companyId: string
   ): Promise<Holding | null> {
     return this.holdings.getByCompanyId(ownerId, portfolioId, companyId);
-  }
-
-  /**
-   * Records the resulting position after a transaction. Intended caller is
-   * the Trading domain (docs/development-roadmap.md Phase 2, item 7),
-   * which owns average-cost calculation from the transaction ledger —
-   * Portfolio only stores the result.
-   */
-  async recordPosition(
-    ownerId: string,
-    portfolioId: string,
-    companyId: string,
-    input: unknown
-  ): Promise<Holding> {
-    const parsed = holdingPositionSchema.safeParse(input);
-    if (!parsed.success) {
-      throw new ValidationError(
-        "Invalid holding position",
-        parsed.error.flatten().fieldErrors as Record<string, string[]>
-      );
-    }
-
-    await this.getPortfolio(ownerId, portfolioId);
-    return this.holdings.upsertPosition(ownerId, portfolioId, companyId, parsed.data);
   }
 
   async updateTargetAllocation(

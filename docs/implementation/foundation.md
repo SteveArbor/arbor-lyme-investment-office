@@ -2,8 +2,11 @@
 
 **Date:** 2026-07-19
 **Branch:** `foundation`
-**Status:** Complete, uncommitted — awaiting review and approval before any
-commit (per the working method this milestone was built under).
+**Status:** Complete and committed (`2ce68b5`–`110de62`; the sign-off
+checklist below reflects the state at review time and is left as a
+historical record, not a live checklist). Phase 2 was built on top of this
+milestone — see `docs/implementation/phase-2-architecture-review.md` and
+`docs/implementation/staff-engineer-review.md` for what came after.
 
 This is the authoritative record of what the Foundation milestone actually
 built, as distinct from what the architecture documents describe for later

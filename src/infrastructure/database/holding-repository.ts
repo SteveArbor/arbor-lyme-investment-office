@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { Holding, HoldingPosition, HoldingRepository } from "@/domain/portfolio";
+import type { Holding, HoldingRepository } from "@/domain/portfolio";
 import type { Database } from "@/types/database";
 
 type HoldingRow = Database["public"]["Tables"]["holdings"]["Row"];
@@ -51,31 +51,6 @@ export class SupabaseHoldingRepository implements HoldingRepository {
     return (data ?? []).map(toDomain);
   }
 
-  async upsertPosition(
-    ownerId: string,
-    portfolioId: string,
-    companyId: string,
-    position: HoldingPosition
-  ): Promise<Holding> {
-    const { data, error } = await this.client
-      .from("holdings")
-      .upsert(
-        {
-          owner_id: ownerId,
-          portfolio_id: portfolioId,
-          company_id: companyId,
-          quantity: position.quantity,
-          average_cost: position.averageCost,
-        },
-        { onConflict: "portfolio_id,company_id" }
-      )
-      .select("*")
-      .single();
-
-    if (error) throw error;
-    return toDomain(data);
-  }
-
   async updateTargetAllocation(
     ownerId: string,
     holdingId: string,
@@ -91,15 +66,5 @@ export class SupabaseHoldingRepository implements HoldingRepository {
 
     if (error) throw error;
     return toDomain(data);
-  }
-
-  async delete(ownerId: string, holdingId: string): Promise<void> {
-    const { error } = await this.client
-      .from("holdings")
-      .delete()
-      .eq("owner_id", ownerId)
-      .eq("id", holdingId);
-
-    if (error) throw error;
   }
 }

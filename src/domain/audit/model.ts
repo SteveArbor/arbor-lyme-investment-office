@@ -42,6 +42,23 @@ export interface AuditRecord {
 export const AUDIT_SENSITIVE_KEY_PATTERN =
   /password|token|secret|api[-_]?key|authorization|cookie|session/i;
 
+/**
+ * Recurses into arrays too, not just plain objects — a sensitive key
+ * nested inside an array element (e.g. `{ items: [{ sessionToken: "..." }] }`)
+ * previously passed through unsanitized because arrays were excluded from
+ * the recursive branch entirely (docs/implementation/staff-engineer-review.md
+ * finding H3). Every value reachable from `metadata` is now visited.
+ */
+function sanitizeValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeValue);
+  }
+  if (value !== null && typeof value === "object") {
+    return sanitizeAuditMetadata(value as Record<string, unknown>);
+  }
+  return value;
+}
+
 export function sanitizeAuditMetadata(metadata: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
@@ -50,11 +67,7 @@ export function sanitizeAuditMetadata(metadata: Record<string, unknown>): Record
       continue;
     }
 
-    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
-      result[key] = sanitizeAuditMetadata(value as Record<string, unknown>);
-    } else {
-      result[key] = value;
-    }
+    result[key] = sanitizeValue(value);
   }
 
   return result;

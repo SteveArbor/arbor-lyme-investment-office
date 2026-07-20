@@ -281,13 +281,9 @@ function buildPortfolioService() {
     async listByPortfolioId() {
       return [];
     },
-    async upsertPosition() {
-      throw new Error("not used");
-    },
     async updateTargetAllocation() {
       throw new Error("not used");
     },
-    async delete() {},
   };
   return new PortfolioService(portfolios, holdings);
 }

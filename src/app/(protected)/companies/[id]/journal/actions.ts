@@ -5,21 +5,26 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { composeAppServices } from "@/application/services";
-import { ValidationError } from "@/domain/shared";
+import { UserFacingError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
+import { logger } from "@/lib/logger";
 
 export interface ActionFormState {
   error: string | null;
   success: boolean;
 }
 
-function fieldError(error: unknown): ActionFormState {
-  if (error instanceof ValidationError) {
+function fieldError(error: unknown, context: Record<string, unknown>): ActionFormState {
+  if (error instanceof UserFacingError) {
     return {
-      error: Object.values(error.fieldErrors).flat()[0] ?? "Please check the highlighted fields.",
+      error: Object.values(error.fieldErrors).flat()[0] ?? error.message,
       success: false,
     };
   }
+  logger.error("Server Action failed unexpectedly", {
+    ...context,
+    error: error instanceof Error ? error.message : String(error),
+  });
   return { error: "Something went wrong. Please try again.", success: false };
 }
 
@@ -54,7 +59,7 @@ export async function openJournalEntryAction(
     const { event } = await journalService.openEntry(user.id, input, randomUUID());
     await eventBus.publish(event);
   } catch (error) {
-    return fieldError(error);
+    return fieldError(error, { action: "openJournalEntryAction", companyId, userId: user.id });
   }
 
   revalidatePath(`/companies/${companyId}/journal`);
@@ -85,7 +90,12 @@ export async function closeJournalEntryAction(
     const { event } = await journalService.closeEntry(user.id, entryId, input, randomUUID());
     await eventBus.publish(event);
   } catch (error) {
-    return fieldError(error);
+    return fieldError(error, {
+      action: "closeJournalEntryAction",
+      companyId,
+      entryId,
+      userId: user.id,
+    });
   }
 
   revalidatePath(`/companies/${companyId}/journal`);

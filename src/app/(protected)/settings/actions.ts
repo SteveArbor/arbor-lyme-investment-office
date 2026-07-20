@@ -5,8 +5,9 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 
 import { composeAppServices } from "@/application/services";
-import { ValidationError } from "@/domain/shared";
+import { UserFacingError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
+import { logger } from "@/lib/logger";
 
 export interface UpdateSettingsFormState {
   error: string | null;
@@ -47,9 +48,14 @@ export async function updateSettingsAction(
     const { event } = await settingsService.updateSettings(user.id, input, randomUUID());
     await eventBus.publish(event);
   } catch (error) {
-    if (error instanceof ValidationError) {
+    if (error instanceof UserFacingError) {
       return { error: "Please check the highlighted fields and try again.", success: false };
     }
+    logger.error("Server Action failed unexpectedly", {
+      action: "updateSettingsAction",
+      userId: user.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return { error: "Something went wrong. Please try again.", success: false };
   }
 

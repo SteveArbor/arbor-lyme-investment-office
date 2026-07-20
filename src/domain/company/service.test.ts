@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NotFoundError, ValidationError } from "@/domain/shared";
+import { ConflictError, NotFoundError, ValidationError } from "@/domain/shared";
 
 import type { Company, CompanyInput, CompanyUpdate } from "./model";
 import type { CompanyListFilter, CompanyRepository } from "./repository";
@@ -79,12 +79,12 @@ describe("CompanyService", () => {
     expect(result.event.payload.ticker).toBe("EXMP");
   });
 
-  it("rejects a duplicate ticker for the same owner", async () => {
+  it("rejects a duplicate ticker for the same owner with a ConflictError", async () => {
     const service = new CompanyService(new FakeCompanyRepository());
     await service.createCompany("user-1", validInput, "corr-1");
 
     await expect(service.createCompany("user-1", validInput, "corr-2")).rejects.toBeInstanceOf(
-      ValidationError
+      ConflictError
     );
   });
 

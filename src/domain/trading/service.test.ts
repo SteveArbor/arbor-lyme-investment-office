@@ -2,16 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type {
   Holding,
-  HoldingPosition,
-  HoldingRepository,
   Portfolio,
   PortfolioInput,
   PortfolioRepository,
   PortfolioUpdate,
 } from "@/domain/portfolio";
-import { NotFoundError, ValidationError } from "@/domain/shared";
+import { ConflictError, NotFoundError } from "@/domain/shared";
 
-import type { Transaction } from "./model";
+import { calculateRealisedGain, calculateWeightedAverageCost, type Transaction } from "./model";
 import type {
   RecordBuyData,
   RecordCashAdjustmentData,
@@ -70,7 +68,7 @@ class FakePortfolioRepository implements PortfolioRepository {
   }
 }
 
-class FakeHoldingRepository implements HoldingRepository {
+class FakeHoldingRepository {
   constructor(public readonly rows: Holding[] = []) {}
 
   async getByCompanyId(
@@ -90,33 +88,6 @@ class FakeHoldingRepository implements HoldingRepository {
     return this.rows.filter((row) => row.ownerId === ownerId && row.portfolioId === portfolioId);
   }
 
-  async upsertPosition(
-    ownerId: string,
-    portfolioId: string,
-    companyId: string,
-    position: HoldingPosition
-  ): Promise<Holding> {
-    const existing = await this.getByCompanyId(ownerId, portfolioId, companyId);
-    if (existing) {
-      const updated: Holding = { ...existing, ...position, updatedAt: new Date().toISOString() };
-      this.rows[this.rows.findIndex((row) => row.id === existing.id)] = updated;
-      return updated;
-    }
-    const now = new Date().toISOString();
-    const holding: Holding = {
-      id: `holding-${nextId++}`,
-      ownerId,
-      portfolioId,
-      companyId,
-      targetAllocationPercent: 0,
-      ...position,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.rows.push(holding);
-    return holding;
-  }
-
   async updateTargetAllocation(
     ownerId: string,
     holdingId: string,
@@ -127,25 +98,28 @@ class FakeHoldingRepository implements HoldingRepository {
     this.rows[index] = { ...this.rows[index], targetAllocationPercent };
     return this.rows[index];
   }
-
-  async delete(ownerId: string, holdingId: string): Promise<void> {
-    const index = this.rows.findIndex((row) => row.ownerId === ownerId && row.id === holdingId);
-    if (index !== -1) this.rows.splice(index, 1);
-  }
 }
 
 /**
- * Models the same all-or-nothing contract as the real Postgres functions
- * (supabase/migrations/20260719000014_atomic_transaction_functions.sql):
- * every record* method mutates the shared portfolio/holding rows and
- * appends the ledger row together, or — when `failNextWrite` is armed —
- * throws before touching any of the three, proving TradingService itself
- * has no code path that could apply one write without the others (the
- * thing finding 4.1 was actually about: TradingService no longer performs
- * three separate repository calls at all).
+ * Models the real Postgres functions
+ * (supabase/migrations/20260719000015_transaction_integrity_hardening.sql),
+ * not just their all-or-nothing write contract: the resulting
+ * quantity/average cost/realised gain are computed *here*, from the
+ * fake's own current state, exactly like the SQL function computes them
+ * from a row it has just locked — `RecordBuyData`/`RecordSellData` no
+ * longer carry those fields at all (docs/implementation/
+ * staff-engineer-review.md finding H1), so there is no way for a test (or
+ * TradingService) to hand this fake a value to blindly persist. Reuses
+ * domain/trading/model.ts's calculateWeightedAverageCost/
+ * calculateRealisedGain — the same functions the SQL formula mirrors —
+ * so this fake and the real database compute the same thing from the same
+ * inputs; the live validation script cross-checks that this parity holds
+ * against a real Postgres instance, not just against itself.
  */
+type FakeTransactionRow = Transaction & { idempotencyKeyForTest?: string };
+
 class FakeAtomicTransactionRepository {
-  public readonly rows: Transaction[] = [];
+  public readonly rows: FakeTransactionRow[] = [];
 
   private failNextWrite: Error | null = null;
 
@@ -165,6 +139,33 @@ class FakeAtomicTransactionRepository {
       this.failNextWrite = null;
       throw error;
     }
+  }
+
+  private findExistingByKey(
+    ownerId: string,
+    idempotencyKey: string | undefined
+  ): Transaction | null {
+    if (!idempotencyKey) return null;
+    return (
+      this.rows.find(
+        (row) => row.ownerId === ownerId && row.idempotencyKeyForTest === idempotencyKey
+      ) ?? null
+    );
+  }
+
+  private portfolio(ownerId: string, portfolioId: string): Portfolio {
+    const portfolio = this.portfolioRows.find(
+      (row) => row.ownerId === ownerId && row.id === portfolioId
+    );
+    if (!portfolio) throw new NotFoundError("Portfolio", portfolioId);
+    return portfolio;
+  }
+
+  private holding(ownerId: string, portfolioId: string, companyId: string): Holding | undefined {
+    return this.holdingRows.find(
+      (row) =>
+        row.ownerId === ownerId && row.portfolioId === portfolioId && row.companyId === companyId
+    );
   }
 
   private applyCashDelta(ownerId: string, portfolioId: string, delta: number): void {
@@ -207,16 +208,28 @@ class FakeAtomicTransactionRepository {
   }
 
   async recordBuy(ownerId: string, data: RecordBuyData) {
+    const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
+    if (existing) return existing;
     this.maybeFail();
-    this.applyCashDelta(ownerId, data.portfolioId, -(data.quantity * data.pricePerUnit));
-    this.applyHolding(
-      ownerId,
-      data.portfolioId,
-      data.companyId,
-      data.newHoldingQuantity,
-      data.newHoldingAverageCost
+
+    const portfolio = this.portfolio(ownerId, data.portfolioId);
+    const cost = data.quantity * data.pricePerUnit;
+    if (cost > portfolio.cash) {
+      throw new ConflictError("Insufficient cash for this purchase");
+    }
+    const existingHolding = this.holding(ownerId, data.portfolioId, data.companyId);
+    const newQuantity = (existingHolding?.quantity ?? 0) + data.quantity;
+    const newAverageCost = calculateWeightedAverageCost(
+      existingHolding?.quantity ?? 0,
+      existingHolding?.averageCost ?? 0,
+      data.quantity,
+      data.pricePerUnit
     );
-    const transaction: Transaction = {
+
+    this.applyCashDelta(ownerId, data.portfolioId, -cost);
+    this.applyHolding(ownerId, data.portfolioId, data.companyId, newQuantity, newAverageCost);
+
+    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
       id: `txn-${nextId++}`,
       ownerId,
       portfolioId: data.portfolioId,
@@ -224,28 +237,41 @@ class FakeAtomicTransactionRepository {
       type: "buy",
       quantity: data.quantity,
       pricePerUnit: data.pricePerUnit,
-      amount: -(data.quantity * data.pricePerUnit),
+      amount: -cost,
       realisedGain: null,
       occurredAt: data.occurredAt,
       notes: data.notes,
       createdAt: new Date().toISOString(),
+      idempotencyKeyForTest: data.idempotencyKey,
     };
     this.rows.push(transaction);
     return transaction;
   }
 
   async recordSell(ownerId: string, data: RecordSellData) {
+    const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
+    if (existing) return existing;
     this.maybeFail();
+
+    this.portfolio(ownerId, data.portfolioId);
+    const existingHolding = this.holding(ownerId, data.portfolioId, data.companyId);
+    if (!existingHolding || existingHolding.quantity < data.quantity) {
+      throw new ConflictError("Insufficient holding to sell");
+    }
+
     const proceeds = data.quantity * data.pricePerUnit;
-    this.applyCashDelta(ownerId, data.portfolioId, proceeds);
-    this.applyHolding(
-      ownerId,
-      data.portfolioId,
-      data.companyId,
-      data.newHoldingQuantity,
-      data.newHoldingAverageCost
+    const realisedGain = calculateRealisedGain(
+      data.quantity,
+      data.pricePerUnit,
+      existingHolding.averageCost
     );
-    const transaction: Transaction = {
+    const newQuantity = existingHolding.quantity - data.quantity;
+    const newAverageCost = newQuantity > 0 ? existingHolding.averageCost : 0;
+
+    this.applyCashDelta(ownerId, data.portfolioId, proceeds);
+    this.applyHolding(ownerId, data.portfolioId, data.companyId, newQuantity, newAverageCost);
+
+    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
       id: `txn-${nextId++}`,
       ownerId,
       portfolioId: data.portfolioId,
@@ -254,19 +280,24 @@ class FakeAtomicTransactionRepository {
       quantity: data.quantity,
       pricePerUnit: data.pricePerUnit,
       amount: proceeds,
-      realisedGain: data.realisedGain,
+      realisedGain,
       occurredAt: data.occurredAt,
       notes: data.notes,
       createdAt: new Date().toISOString(),
+      idempotencyKeyForTest: data.idempotencyKey,
     };
     this.rows.push(transaction);
     return transaction;
   }
 
   async recordDividend(ownerId: string, data: RecordDividendData) {
+    const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
+    if (existing) return existing;
     this.maybeFail();
+
+    this.portfolio(ownerId, data.portfolioId);
     this.applyCashDelta(ownerId, data.portfolioId, data.amount);
-    const transaction: Transaction = {
+    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
       id: `txn-${nextId++}`,
       ownerId,
       portfolioId: data.portfolioId,
@@ -279,15 +310,20 @@ class FakeAtomicTransactionRepository {
       occurredAt: data.occurredAt,
       notes: data.notes,
       createdAt: new Date().toISOString(),
+      idempotencyKeyForTest: data.idempotencyKey,
     };
     this.rows.push(transaction);
     return transaction;
   }
 
   async recordCashAdjustment(ownerId: string, data: RecordCashAdjustmentData) {
+    const existing = this.findExistingByKey(ownerId, data.idempotencyKey);
+    if (existing) return existing;
     this.maybeFail();
+
+    this.portfolio(ownerId, data.portfolioId);
     this.applyCashDelta(ownerId, data.portfolioId, data.amount);
-    const transaction: Transaction = {
+    const transaction: Transaction & { idempotencyKeyForTest?: string } = {
       id: `txn-${nextId++}`,
       ownerId,
       portfolioId: data.portfolioId,
@@ -300,6 +336,7 @@ class FakeAtomicTransactionRepository {
       occurredAt: data.occurredAt,
       notes: data.notes,
       createdAt: new Date().toISOString(),
+      idempotencyKeyForTest: data.idempotencyKey,
     };
     this.rows.push(transaction);
     return transaction;
@@ -367,7 +404,7 @@ describe("TradingService.recordBuy", () => {
     expect(holding?.averageCost).toBeCloseTo(25, 5);
   });
 
-  it("rejects a buy that exceeds available cash", async () => {
+  it("rejects a buy that exceeds available cash with a ConflictError", async () => {
     const { service, portfolio } = buildService(100);
     await expect(
       service.recordBuy(
@@ -376,7 +413,30 @@ describe("TradingService.recordBuy", () => {
         { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 50, occurredAt },
         "corr-1"
       )
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("replays the same transaction instead of double-debiting cash when the idempotency key repeats", async () => {
+    const { service, portfolio, portfolios } = buildService(10_000);
+    const input = { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 50, occurredAt };
+
+    const first = await service.recordBuy(OWNER, portfolio.id, input, "corr-retry-1");
+    const second = await service.recordBuy(OWNER, portfolio.id, input, "corr-retry-1");
+
+    expect(second.transaction.id).toBe(first.transaction.id);
+    const updated = await portfolios.getById(OWNER, portfolio.id);
+    expect(updated?.cash).toBe(9_500); // debited once, not twice
+  });
+
+  it("applies two calls with different idempotency keys as two independent buys", async () => {
+    const { service, portfolio, portfolios } = buildService(10_000);
+    const input = { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 50, occurredAt };
+
+    await service.recordBuy(OWNER, portfolio.id, input, "corr-a");
+    await service.recordBuy(OWNER, portfolio.id, input, "corr-b");
+
+    const updated = await portfolios.getById(OWNER, portfolio.id);
+    expect(updated?.cash).toBe(9_000); // debited twice — these are genuinely different purchases
   });
 });
 
@@ -405,7 +465,7 @@ describe("TradingService.recordSell", () => {
     expect(updatedPortfolio?.cash).toBe(10_000 - 200 + 120);
   });
 
-  it("rejects selling more than the current holding", async () => {
+  it("rejects selling more than the current holding with a ConflictError", async () => {
     const { service, portfolio } = buildService(10_000);
     await service.recordBuy(
       OWNER,
@@ -421,7 +481,7 @@ describe("TradingService.recordSell", () => {
         { companyId: COMPANY_ID, quantity: 10, pricePerUnit: 25, occurredAt },
         "corr-2"
       )
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("rejects selling a company never held", async () => {
@@ -433,7 +493,7 @@ describe("TradingService.recordSell", () => {
         { companyId: COMPANY_ID, quantity: 1, pricePerUnit: 25, occurredAt },
         "corr-1"
       )
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 });
 
@@ -469,18 +529,18 @@ describe("TradingService.recordCashAdjustment", () => {
     expect(updated?.cash).toBe(1_500);
   });
 
-  it("rejects a withdrawal that would make cash negative", async () => {
+  it("rejects a withdrawal that would make cash negative with a ConflictError", async () => {
     const { service, portfolio } = buildService(100);
     await expect(
       service.recordCashAdjustment(OWNER, portfolio.id, { amount: -500, occurredAt }, "corr-1")
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).rejects.toBeInstanceOf(ConflictError);
   });
 
   it("rejects a zero-amount adjustment", async () => {
     const { service, portfolio } = buildService(100);
     await expect(
       service.recordCashAdjustment(OWNER, portfolio.id, { amount: 0, occurredAt }, "corr-1")
-    ).rejects.toBeInstanceOf(ValidationError);
+    ).rejects.toThrow(); // caught by zod (ValidationError), before any repository call
   });
 });
 

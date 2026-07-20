@@ -1,4 +1,5 @@
 import {
+  ConflictError,
   createDomainEvent,
   type DomainEvent,
   NotFoundError,
@@ -54,7 +55,7 @@ export class CompanyService {
 
     const existing = await this.repository.getByTicker(ownerId, parsed.data.ticker);
     if (existing) {
-      throw new ValidationError("A company with this ticker already exists", {
+      throw new ConflictError("A company with this ticker already exists", {
         ticker: ["This ticker is already tracked"],
       });
     }

@@ -25,6 +25,7 @@ type TransactionRow = {
   occurred_at: string;
   notes: string | null;
   created_at: string;
+  idempotency_key: string | null;
 };
 
 export interface Database {
@@ -418,51 +419,46 @@ export interface Database {
     Functions: {
       record_buy_transaction: {
         Args: {
-          p_owner_id: string;
           p_portfolio_id: string;
           p_company_id: string;
           p_quantity: number;
           p_price_per_unit: number;
           p_occurred_at: string;
           p_notes: string | null;
-          p_new_holding_quantity: number;
-          p_new_holding_average_cost: number;
+          p_idempotency_key?: string | null;
         };
         Returns: TransactionRow;
       };
       record_sell_transaction: {
         Args: {
-          p_owner_id: string;
           p_portfolio_id: string;
           p_company_id: string;
           p_quantity: number;
           p_price_per_unit: number;
           p_occurred_at: string;
           p_notes: string | null;
-          p_new_holding_quantity: number;
-          p_new_holding_average_cost: number;
-          p_realised_gain: number;
+          p_idempotency_key?: string | null;
         };
         Returns: TransactionRow;
       };
       record_dividend_transaction: {
         Args: {
-          p_owner_id: string;
           p_portfolio_id: string;
           p_company_id: string;
           p_amount: number;
           p_occurred_at: string;
           p_notes: string | null;
+          p_idempotency_key?: string | null;
         };
         Returns: TransactionRow;
       };
       record_cash_adjustment_transaction: {
         Args: {
-          p_owner_id: string;
           p_portfolio_id: string;
           p_amount: number;
           p_occurred_at: string;
           p_notes: string | null;
+          p_idempotency_key?: string | null;
         };
         Returns: TransactionRow;
       };
