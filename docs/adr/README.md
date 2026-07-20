@@ -75,3 +75,4 @@ What would cause this decision to be revisited.
 | 0023 | Separate Investment Rating from Portfolio Action                             | Accepted           |
 | 0024 | Monitoring Dashboard as an Application-Layer Composer, Not a Domain          | Accepted           |
 | 0025 | Atomic RPCs as the Sole Financial Write Path, with Server-Side Arithmetic    | Accepted           |
+| 0026 | Portfolio Accounting Principles                                              | Accepted           |

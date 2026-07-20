@@ -224,6 +224,11 @@ authoritative — a deliberate ADR 0025 trade-off, not an oversight).
   multi-field forms. _Deferred:_ fixing well means touching the shared
   error-mapping pattern across ~10 files. _Target:_ if/when this has more
   than one real user.
+- **Fee/commission tracking is entirely absent** (ADR 0026) — a buy/sell's
+  `amount` is exactly `quantity × price_per_unit`, no separate fee field
+  exists anywhere. _Deferred:_ not discovered as a gap until ADR 0026's
+  review; small and additive, not architecturally blocking. _Target:_ the
+  first time a real commission meaningfully skews a reported gain figure.
 
 **Low**
 
@@ -240,6 +245,15 @@ authoritative — a deliberate ADR 0025 trade-off, not an oversight).
   opportunistic, low risk.
 - **No inline "cancel" affordance** on `companies/new` or the transaction
   forms beyond the persistent top nav. _Target:_ a future UI polish pass.
+- **No tax-lot or tax-treatment tracking** (ADR 0026) — single
+  average-cost basis only, no FIFO/specific-identification, no short/long
+  gain classification. _Deferred:_ deliberate scope boundary, not a bug —
+  this is exactly what Phase 8's Tax Planning module exists to eventually
+  own. _Target:_ if/when tax-filing use becomes an actual goal.
+- **No corporate-action support** (splits, mergers, spin-offs — ADR 0026).
+  _Deferred:_ no held company has needed it yet; the right transaction
+  shape isn't obvious without a real case to design against. _Target:_ the
+  first time a held company actually undergoes one.
 
 ---
 
@@ -276,14 +290,14 @@ turn comes — intentionally a placeholder, not a committed backlog.
 
 # Open ADRs
 
-All 25 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
+All 26 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
 Dedicated, Non-Executing Domain), which is `Superseded by 0023`
 (Investment Rating / Portfolio Action split) — the supersession is
 recorded, not silently reversed, per this project's own ADR convention.
 
-No ADR is currently `Proposed`/under active review. The two most consequential
-recent decisions, worth a future contributor's attention if anything in
-this area needs revisiting:
+No ADR is currently `Proposed`/under active review. The three most
+consequential recent decisions, worth a future contributor's attention if
+anything in this area needs revisiting:
 
 - **ADR 0023** — the Investment Rating / Portfolio Action split. The
   architectural spine Phase 2 was built around; changing it would touch
@@ -293,6 +307,13 @@ this area needs revisiting:
   preference (Phase 2 Architecture Review 4.2) to close a critical
   security gap; carries the "two copies of the formula" trade-off listed
   in Technical Debt above.
+- **ADR 0026** — Portfolio Accounting Principles. Documentation-only,
+  formalizing decisions already embedded in the trading/portfolio domains
+  (average-cost basis, cash-basis dividends, ledger-only cash/holdings, no
+  fee/tax/corporate-action tracking). Names three concrete gaps worth a
+  future contributor's attention: fees are not tracked at all, tax
+  treatment is explicitly out of scope, and corporate actions (splits,
+  mergers) have no representation in the transaction model yet.
 
 ---
 
