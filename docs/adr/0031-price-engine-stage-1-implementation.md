@@ -55,7 +55,7 @@ belongs somewhere else, not a bug to silently paper over.
 
 One row per `(owner_id, identifier_key)` — a "last known good" cache, not an
 append-only ledger. A failed refresh leaves the prior row untouched, so a
-caller always has *some* quote to show, with `source_timestamp` making its
+caller always has _some_ quote to show, with `source_timestamp` making its
 age visible. RLS scopes every row to its owner, matching every other table
 in this schema.
 
@@ -78,7 +78,7 @@ in this schema.
   `/market_state`'s `is_market_open` to `"open"`/`"closed"` only.
 - `RoutingPriceEngine implements PriceEngine` — holds a
   `SecurityPriceProviderMap`, now typed `Partial<Record<SecurityType,
-  SecurityPriceProvider>>` rather than a full `Record` (a change from ADR
+SecurityPriceProvider>>` rather than a full `Record` (a change from ADR
   0030's original description). Stage 1 has no `fund` provider yet; forcing
   a complete map would have required either a placeholder fund provider
   (over-engineering, explicitly out of scope until Stage 2) or a
@@ -101,7 +101,7 @@ there is no automatic or scheduled trigger anywhere in this milestone.
 
 ### UI (`portfolio/[id]/page.tsx`, `portfolio-performance-panel.tsx`)
 
-The Server Component reads only the *persisted* `QuoteRepository` value on
+The Server Component reads only the _persisted_ `QuoteRepository` value on
 every ordinary page load and computes quote age from it locally — it never
 calls Twelve Data on render. A live vendor call happens only when the user
 explicitly clicks "Refresh prices," preserving the manual-refresh design and
@@ -200,12 +200,12 @@ Stage 1 holdings plus WPP. Three real defects were found and fixed:
    body on the HTTP-200 path**, per this ADR's original documented
    assumption that Twelve Data always encodes errors as `{status:"error"}`
    inside a 200. That assumption was incomplete: a plan-tier restriction
-   (see below) comes back as a genuine non-2xx status with the *same*
+   (see below) comes back as a genuine non-2xx status with the _same_
    informative body attached, which the client discarded in favour of a
    bare `HTTP 404`. Fixed by reading the body first, regardless of status,
    before falling back to a bare status code.
 3. **ASML's stored identifier (`ticker: "ASML.AS"`, `exchange: "Euronext
-   Amsterdam"`) doesn't match Twelve Data's own vocabulary** (bare `ASML` +
+Amsterdam"`) doesn't match Twelve Data's own vocabulary** (bare `ASML` +
    `exchange: "Euronext"`, confirmed via Twelve Data's `/symbol_search`).
    The suffix exists specifically because this schema's
    `companies_owner_ticker_unique` constraint already gives the bare

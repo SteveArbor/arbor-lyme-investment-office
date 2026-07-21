@@ -19,7 +19,12 @@ export type {
   PortfolioPerformanceDependencies,
 } from "./portfolio-performance";
 export { buildPortfolioPerformanceData } from "./portfolio-performance";
-export type { CompanyLookup, HoldingQuoteInfo, HoldingValuation, PortfolioValuation } from "./portfolio-valuation";
+export type {
+  CompanyLookup,
+  HoldingQuoteInfo,
+  HoldingValuation,
+  PortfolioValuation,
+} from "./portfolio-valuation";
 export { buildPortfolioValuation } from "./portfolio-valuation";
 export type {
   PriceRefreshDependencies,

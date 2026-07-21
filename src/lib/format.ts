@@ -69,7 +69,5 @@ export function formatNumber(value: number, fractionDigits = 0): string {
 
 /** Tailwind text-color classes for a gain/loss value — green when >= 0, red when negative. */
 export function gainLossClasses(value: number): string {
-  return value >= 0
-    ? "text-emerald-700 dark:text-emerald-400"
-    : "text-red-700 dark:text-red-400";
+  return value >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400";
 }

@@ -127,7 +127,12 @@ describe("RoutingPriceEngine", () => {
 
     await engine.getPrice({ type: "equity", ticker: "A", exchange: "X", currency: "USD" });
     await engine.getPrice({ type: "etf", ticker: "B", exchange: "X", currency: "USD" });
-    await engine.getPrice({ type: "investment_trust", ticker: "C", exchange: "X", currency: "GBP" });
+    await engine.getPrice({
+      type: "investment_trust",
+      ticker: "C",
+      exchange: "X",
+      currency: "GBP",
+    });
 
     expect(sharedProvider.received).toHaveLength(3);
   });

@@ -1,4 +1,9 @@
-import { buildFxPairKey, type FxRate, type FxRateProvider, type FxRateRepository } from "@/domain/market";
+import {
+  buildFxPairKey,
+  type FxRate,
+  type FxRateProvider,
+  type FxRateRepository,
+} from "@/domain/market";
 
 export const FX_REFRESH_OUTCOME_OPTIONS = ["updated", "unchanged", "failed"] as const;
 export type FxRefreshOutcome = (typeof FX_REFRESH_OUTCOME_OPTIONS)[number];
@@ -53,7 +58,9 @@ export async function refreshFxRates(
   } catch (error) {
     fetchError = error instanceof Error ? error.message : String(error);
   }
-  const fetchedByKey = new Map(fetched.map((rate) => [buildFxPairKey(rate.base, rate.quote), rate]));
+  const fetchedByKey = new Map(
+    fetched.map((rate) => [buildFxPairKey(rate.base, rate.quote), rate])
+  );
 
   return Promise.all(
     nonIdentityPairs.map(async (pair): Promise<FxRefreshResult> => {

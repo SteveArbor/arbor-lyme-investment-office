@@ -288,7 +288,9 @@ export function calculatePortfolioPerformance(
   const dailyGain =
     dailyChangeAmounts.length > 0 ? dailyChangeAmounts.reduce((sum, v) => sum + v, 0) : null;
   const dailyGainPercent =
-    dailyGain !== null && marketValue - dailyGain !== 0 ? dailyGain / (marketValue - dailyGain) : null;
+    dailyGain !== null && marketValue - dailyGain !== 0
+      ? dailyGain / (marketValue - dailyGain)
+      : null;
   const unrealisedGain = marketValue - costBasis;
   const unrealisedGainPercent = costBasis > 0 ? unrealisedGain / costBasis : 0;
 
@@ -298,12 +300,9 @@ export function calculatePortfolioPerformance(
     input.dividendsReceived -
     input.feesPaid -
     input.taxesPaid;
-  const totalReturnPercent =
-    input.netContributions > 0 ? totalReturn / input.netContributions : 0;
+  const totalReturnPercent = input.netContributions > 0 ? totalReturn / input.netContributions : 0;
 
-  const holdingPerformances = input.holdings.map((h) =>
-    calculateHoldingPerformance(h, totalValue)
-  );
+  const holdingPerformances = input.holdings.map((h) => calculateHoldingPerformance(h, totalValue));
 
   const largestPosition = holdingPerformances.reduce<HoldingPerformance | null>(
     (largest, h) => (largest === null || h.marketValue > largest.marketValue ? h : largest),

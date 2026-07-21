@@ -21,7 +21,13 @@ import {
 } from "@/components/ui/table";
 import { calculateJournalCompleteness } from "@/domain/journal";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
-import { formatCurrency, formatPercent, formatSignedCurrency, formatSignedPercent, gainLossClasses } from "@/lib/format";
+import {
+  formatCurrency,
+  formatPercent,
+  formatSignedCurrency,
+  formatSignedPercent,
+  gainLossClasses,
+} from "@/lib/format";
 
 import { RATING_LABELS, THESIS_STATUS_LABELS } from "../companies/[id]/labels";
 import {
@@ -138,7 +144,9 @@ export default async function DashboardPage({
         )
       )
     ),
-    Promise.all(portfolios.map((portfolio) => tradingService.listTransactions(user!.id, portfolio.id))),
+    Promise.all(
+      portfolios.map((portfolio) => tradingService.listTransactions(user!.id, portfolio.id))
+    ),
   ]);
 
   // Live quote propagation (ADR 0032): the same persisted quotes and FX
@@ -200,7 +208,9 @@ export default async function DashboardPage({
     0
   );
   const cashAllocationPercent = totalValue > 0 ? totalCash / totalValue : 0;
-  const dailyGains = valuations.map((v) => v.performance.dailyGain).filter((g): g is number => g !== null);
+  const dailyGains = valuations
+    .map((v) => v.performance.dailyGain)
+    .filter((g): g is number => g !== null);
   const totalDailyGain = dailyGains.length > 0 ? dailyGains.reduce((a, b) => a + b, 0) : null;
   const totalDailyGainPercent =
     totalDailyGain !== null && totalValue - totalDailyGain !== 0
@@ -303,7 +313,7 @@ export default async function DashboardPage({
                 ))}
               </select>
             </div>
-            <button type="submit" className={`${inputClasses.replace("mt-1 ", "")} w-auto px-4`}>
+            <button type="submit" className={`${inputClasses.replace("mt-1", "")} w-auto px-4`}>
               View
             </button>
           </form>
@@ -320,13 +330,17 @@ export default async function DashboardPage({
         <SummaryCard
           label="Today's gain/loss (£)"
           value={
-            totalDailyGain !== null ? formatSignedCurrency(totalDailyGain, currency) : "No live quotes"
+            totalDailyGain !== null
+              ? formatSignedCurrency(totalDailyGain, currency)
+              : "No live quotes"
           }
           valueClassName={totalDailyGain !== null ? gainLossClasses(totalDailyGain) : undefined}
         />
         <SummaryCard
           label="Today's gain/loss (%)"
-          value={totalDailyGainPercent !== null ? formatSignedPercent(totalDailyGainPercent, 2) : "—"}
+          value={
+            totalDailyGainPercent !== null ? formatSignedPercent(totalDailyGainPercent, 2) : "—"
+          }
           valueClassName={
             totalDailyGainPercent !== null ? gainLossClasses(totalDailyGainPercent) : undefined
           }
@@ -348,7 +362,9 @@ export default async function DashboardPage({
         <SummaryCard
           label="Last market refresh"
           value={
-            lastMarketUpdate ? new Date(lastMarketUpdate).toLocaleString("en-GB") : "No live quotes yet"
+            lastMarketUpdate
+              ? new Date(lastMarketUpdate).toLocaleString("en-GB")
+              : "No live quotes yet"
           }
         />
         <SummaryCard

@@ -71,7 +71,7 @@ export function HealthScoreCard({ health }: { health: PortfolioHealthResult }) {
               <dt className="text-xs font-medium text-neutral-600 dark:text-neutral-400">
                 {factor.label}
               </dt>
-              <dd className="text-xs tabular-nums text-neutral-500 dark:text-neutral-500">
+              <dd className="text-xs text-neutral-500 tabular-nums dark:text-neutral-500">
                 {Math.round(factor.score * 100)}%
               </dd>
             </div>
@@ -139,7 +139,7 @@ export function AllocationAnalysisTable({
           No holdings to analyse yet.
         </p>
       ) : (
-        <div className="mt-3 -mx-5 overflow-x-auto px-5">
+        <div className="-mx-5 mt-3 overflow-x-auto px-5">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500 uppercase dark:border-neutral-800 dark:text-neutral-500">
@@ -171,10 +171,10 @@ export function AllocationAnalysisTable({
                     </Link>
                     <span className="ml-1 text-neutral-500">({row.ticker})</span>
                   </td>
-                  <td className="py-2 pr-3 tabular-nums text-neutral-700 dark:text-neutral-300">
+                  <td className="py-2 pr-3 text-neutral-700 tabular-nums dark:text-neutral-300">
                     {formatPercent(row.currentPercent)}
                   </td>
-                  <td className="py-2 pr-3 tabular-nums text-neutral-700 dark:text-neutral-300">
+                  <td className="py-2 pr-3 text-neutral-700 tabular-nums dark:text-neutral-300">
                     {formatPercent(row.targetPercent)}
                   </td>
                   <td
@@ -276,9 +276,7 @@ function ExposureList({
             <div className="mt-1">
               <ShareBar
                 percent={item.percent}
-                className={
-                  item.percent > highlightThreshold ? "bg-amber-500" : "bg-neutral-500"
-                }
+                className={item.percent > highlightThreshold ? "bg-amber-500" : "bg-neutral-500"}
               />
             </div>
           </li>
@@ -306,9 +304,21 @@ export function RiskOverviewPanel({
     <div className={cardClasses}>
       <SectionHeading title="Risk Overview" />
       <div className="mt-4 grid grid-cols-1 gap-6 sm:grid-cols-3">
-        <ExposureList title="Sector allocation" breakdown={sectorAllocation} highlightThreshold={0.3} />
-        <ExposureList title="Country allocation" breakdown={countryAllocation} highlightThreshold={0.6} />
-        <ExposureList title="Currency exposure" breakdown={currencyExposure} highlightThreshold={0.6} />
+        <ExposureList
+          title="Sector allocation"
+          breakdown={sectorAllocation}
+          highlightThreshold={0.3}
+        />
+        <ExposureList
+          title="Country allocation"
+          breakdown={countryAllocation}
+          highlightThreshold={0.6}
+        />
+        <ExposureList
+          title="Currency exposure"
+          breakdown={currencyExposure}
+          highlightThreshold={0.6}
+        />
       </div>
       {concentrationWarnings.length > 0 ? (
         <div className="mt-5 border-t border-neutral-200 pt-4 dark:border-neutral-800">
@@ -408,9 +418,7 @@ export function RecentActivityPanel({
                   {formatDate(transaction.occurredAt)}
                 </span>
               </div>
-              <span
-                className={`tabular-nums ${gainLossClasses(transaction.amount)}`}
-              >
+              <span className={`tabular-nums ${gainLossClasses(transaction.amount)}`}>
                 {formatSignedCurrency(transaction.amount, currency)}
               </span>
             </li>
@@ -507,7 +515,7 @@ export function JournalIntegrationPanel({ rows }: { rows: JournalCompletenessRow
                         : "bg-red-500"
                   }
                 />
-                <span className="w-9 shrink-0 text-right text-xs tabular-nums text-neutral-500 dark:text-neutral-500">
+                <span className="w-9 shrink-0 text-right text-xs text-neutral-500 tabular-nums dark:text-neutral-500">
                   {Math.round(row.completePercent * 100)}%
                 </span>
               </div>

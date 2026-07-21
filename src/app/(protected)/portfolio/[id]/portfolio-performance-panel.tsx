@@ -190,7 +190,11 @@ export function PortfolioPerformancePanel({
     setRefreshError(null);
     setRefreshSummary(null);
     startRefresh(async () => {
-      const result = await refreshMarketDataAction(portfolioId, refreshableSecurities, baseCurrency);
+      const result = await refreshMarketDataAction(
+        portfolioId,
+        refreshableSecurities,
+        baseCurrency
+      );
       if (result.error) setRefreshError(result.error);
       setRefreshSummary(outcomeSummary(result.quotes, result.fxRates));
 
@@ -419,7 +423,10 @@ export function PortfolioPerformancePanel({
           value={formatCurrency(performance.dividendsReceived, baseCurrency)}
         />
         <SummaryCard label="Fees paid" value={formatCurrency(performance.feesPaid, baseCurrency)} />
-        <SummaryCard label="Taxes paid" value={formatCurrency(performance.taxesPaid, baseCurrency)} />
+        <SummaryCard
+          label="Taxes paid"
+          value={formatCurrency(performance.taxesPaid, baseCurrency)}
+        />
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -481,8 +488,8 @@ export function PortfolioPerformancePanel({
             </button>
           ) : null}
           <p className="text-sm text-neutral-500 dark:text-neutral-400">
-            All values shown in {baseCurrency}. Manual prices are entered in each security&apos;s own
-            currency.
+            All values shown in {baseCurrency}. Manual prices are entered in each security&apos;s
+            own currency.
           </p>
         </div>
       </div>

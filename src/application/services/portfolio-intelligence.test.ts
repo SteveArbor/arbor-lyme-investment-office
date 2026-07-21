@@ -63,7 +63,10 @@ function makeHolding(overrides: Partial<HoldingValuation> = {}): HoldingValuatio
   };
 }
 
-function makeValuation(holdings: HoldingValuation[], overrides: Partial<PortfolioValuation> = {}): PortfolioValuation {
+function makeValuation(
+  holdings: HoldingValuation[],
+  overrides: Partial<PortfolioValuation> = {}
+): PortfolioValuation {
   const marketValue = holdings.reduce((sum, h) => sum + h.performance.marketValue, 0);
   const cash = overrides.performance?.cash ?? 1_000;
   return {
@@ -165,14 +168,32 @@ describe("buildPortfolioIntelligence", () => {
 
   it("combines multiple portfolios' holdings into one set of totals", () => {
     const holdingA = makeHolding({ companyId: "nvda" });
-    const holdingB = makeHolding({ companyId: "wpp", companyName: "WPP plc", ticker: "WPP", currency: "GBP" });
+    const holdingB = makeHolding({
+      companyId: "wpp",
+      companyName: "WPP plc",
+      ticker: "WPP",
+      currency: "GBP",
+    });
     const valuationA = makeValuation([holdingA]);
     const valuationB = makeValuation([holdingB], { portfolioId: "p2" });
-    const companies = [makeCompany(), makeCompany({ id: "wpp", name: "WPP plc", ticker: "WPP", exchange: "LSE", currency: "GBP", sector: "Communication Services" })];
+    const companies = [
+      makeCompany(),
+      makeCompany({
+        id: "wpp",
+        name: "WPP plc",
+        ticker: "WPP",
+        exchange: "LSE",
+        currency: "GBP",
+        sector: "Communication Services",
+      }),
+    ];
 
     const result = buildPortfolioIntelligence([valuationA, valuationB], companies, new Map());
 
-    expect(result.totalValue).toBeCloseTo(valuationA.performance.totalValue + valuationB.performance.totalValue, 2);
+    expect(result.totalValue).toBeCloseTo(
+      valuationA.performance.totalValue + valuationB.performance.totalValue,
+      2
+    );
     expect(result.allocationRows).toHaveLength(2);
   });
 });

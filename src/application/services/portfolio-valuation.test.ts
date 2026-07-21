@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { FxRate, PriceQuote } from "@/domain/market";
 
 import type { PortfolioPerformanceData } from "./portfolio-performance";
-import { buildPortfolioValuation,type CompanyLookup } from "./portfolio-valuation";
+import { buildPortfolioValuation, type CompanyLookup } from "./portfolio-valuation";
 
 const NOW = "2026-07-21T10:00:00.000Z";
 
@@ -23,11 +23,23 @@ function baseData(overrides: Partial<PortfolioPerformanceData> = {}): PortfolioP
 }
 
 function nvdaCompany(): CompanyLookup {
-  return { ticker: "NVDA", exchange: "NASDAQ", currency: "USD", securityType: "equity", name: "NVIDIA Corporation" };
+  return {
+    ticker: "NVDA",
+    exchange: "NASDAQ",
+    currency: "USD",
+    securityType: "equity",
+    name: "NVIDIA Corporation",
+  };
 }
 
 function fundCompany(): CompanyLookup {
-  return { ticker: "BJMD6R8", exchange: "", currency: "GBP", securityType: "fund", name: "Artemis High Income" };
+  return {
+    ticker: "BJMD6R8",
+    exchange: "",
+    currency: "GBP",
+    securityType: "fund",
+    name: "Artemis High Income",
+  };
 }
 
 function nvdaQuote(overrides: Partial<PriceQuote> = {}): PriceQuote {
@@ -157,9 +169,20 @@ describe("buildPortfolioValuation", () => {
     // equity whose provider quote happens to carry quality "manual" (e.g.
     // a saved manual mark for an equity Twelve Data can't price).
     const companies = new Map([["fund-1", nvdaCompany()]]);
-    const manualQuote = nvdaQuote({ quality: "manual", providerName: "manual", previousClose: undefined });
+    const manualQuote = nvdaQuote({
+      quality: "manual",
+      providerName: "manual",
+      previousClose: undefined,
+    });
 
-    const result = buildPortfolioValuation(data, companies, [manualQuote], [usdGbpRate()], "GBP", NOW);
+    const result = buildPortfolioValuation(
+      data,
+      companies,
+      [manualQuote],
+      [usdGbpRate()],
+      "GBP",
+      NOW
+    );
 
     const holding = result.holdings[0]!;
     expect(holding.isManual).toBe(true);
@@ -184,10 +207,20 @@ describe("buildPortfolioValuation", () => {
     const companies = new Map([["nvda-1", nvdaCompany()]]);
     const quote = nvdaQuote({ previousClose: 200, sourceTimestamp: "2026-07-21T09:50:00.000Z" });
 
-    const result = buildPortfolioValuation(data, companies, [quote], [usdGbpRate(0.75)], "GBP", NOW);
+    const result = buildPortfolioValuation(
+      data,
+      companies,
+      [quote],
+      [usdGbpRate(0.75)],
+      "GBP",
+      NOW
+    );
 
     const holding = result.holdings[0]!;
-    expect(holding.quote?.dailyChange).toEqual({ amount: 203.28 - 200, percent: (203.28 - 200) / 200 });
+    expect(holding.quote?.dailyChange).toEqual({
+      amount: 203.28 - 200,
+      percent: (203.28 - 200) / 200,
+    });
     expect(holding.quote?.age.ageSeconds).toBe(600); // 10 minutes before NOW
   });
 
@@ -205,7 +238,16 @@ describe("buildPortfolioValuation", () => {
       ],
     });
     const companies = new Map([
-      ["wpp-1", { ticker: "WPP", exchange: "LSE", currency: "GBP", securityType: "equity", name: "WPP plc" } as CompanyLookup],
+      [
+        "wpp-1",
+        {
+          ticker: "WPP",
+          exchange: "LSE",
+          currency: "GBP",
+          securityType: "equity",
+          name: "WPP plc",
+        } as CompanyLookup,
+      ],
     ]);
     const wppQuote: PriceQuote = {
       identifier: { type: "equity", ticker: "WPP", exchange: "LSE", currency: "GBP" },

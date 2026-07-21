@@ -42,7 +42,7 @@ shape.
 listing exchange to a country (`NASDAQ`/`NYSE` → United States, `LSE` →
 United Kingdom, `Euronext Amsterdam` → Netherlands, HL's fund platform →
 United Kingdom). This is a deliberate heuristic, disclosed in the
-function's own doc comment: it names where a security *trades*, not
+function's own doc comment: it names where a security _trades_, not
 necessarily where the underlying business is domiciled or headquartered
 (a UK-listed ADR of a US company would map to "United Kingdom" by this
 function). Adding a real `country` field to every company would be more
@@ -78,7 +78,7 @@ produces no `largest_underweight` entry rather than a fabricated one.
 `domain/portfolio/insights.ts` turns `risk.ts`'s already-computed
 concentration warnings into plain-English observations, adds a cash-
 above-target check and a caller-supplied "watch list" of sectors worth
-flagging if entirely absent (a policy choice the *application* layer
+flagging if entirely absent (a policy choice the _application_ layer
 makes explicitly — `WATCHED_SECTORS_FOR_GAPS` in
 `application/services/portfolio-intelligence.ts` — never a taxonomy this
 pure domain function invents itself), and falls back to "No action
@@ -169,7 +169,7 @@ fabricated value.
   integration/Company page enhancements in one pass.
 - **Add a `reviewDate` column to `journal_entries` now.** Considered;
   deferred to keep this milestone's scope to what the brief's completion
-  criteria actually require (journal integration *visible*, not every
+  criteria actually require (journal integration _visible_, not every
   named field newly persisted) — recommended as the natural next journal-
   domain follow-up.
 - **Rank Opportunities/Insights using a real valuation model.** Not

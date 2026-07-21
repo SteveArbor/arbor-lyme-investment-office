@@ -91,7 +91,8 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
   const now = new Date().toISOString();
   const quoteAge = quote ? calculateQuoteAge(quote, now, STALE_AFTER_SECONDS) : null;
   const dailyChange = quote ? calculateDailyChange(quote) : null;
-  const isManualPrice = company.securityType === "fund" || quote === null || quote.quality === "manual";
+  const isManualPrice =
+    company.securityType === "fund" || quote === null || quote.quality === "manual";
 
   // Research Completeness — real signals from research/thesis/valuation/
   // decision/journal, not a placeholder: every one of these domains
@@ -105,7 +106,8 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
     { label: "Journal entry", present: journalEntries.length > 0 },
   ];
   const researchCompletePercent =
-    researchCompletenessItems.filter((item) => item.present).length / researchCompletenessItems.length;
+    researchCompletenessItems.filter((item) => item.present).length /
+    researchCompletenessItems.length;
 
   // Position Summary — every portfolio this owner has that currently
   // holds this company, with market value/allocation/return computed via
@@ -127,8 +129,12 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
     }))
   );
   const heldIn = holdingsByPortfolio.filter(
-    (entry): entry is { portfolio: (typeof allPortfolios)[number]; holding: NonNullable<(typeof holdingsByPortfolio)[number]["holding"]> } =>
-      entry.holding !== null
+    (
+      entry
+    ): entry is {
+      portfolio: (typeof allPortfolios)[number];
+      holding: NonNullable<(typeof holdingsByPortfolio)[number]["holding"]>;
+    } => entry.holding !== null
   );
 
   const companyLookupById = new Map<string, CompanyLookup>(
@@ -145,7 +151,12 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
   );
   const allExchangeTradedIdentifiers = allCompanies
     .filter((c) => c.securityType !== "fund")
-    .map((c) => ({ type: c.securityType, ticker: c.ticker, exchange: c.exchange, currency: c.currency }));
+    .map((c) => ({
+      type: c.securityType,
+      ticker: c.ticker,
+      exchange: c.exchange,
+      currency: c.currency,
+    }));
   const allHeldCurrencies = new Set(allCompanies.map((c) => c.currency));
   const allFxPairs = [...allHeldCurrencies]
     .filter((currency) => currency !== settings.baseCurrency)
@@ -285,7 +296,7 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
             Not currently held in any portfolio.
           </p>
         ) : (
-          <div className="mt-3 -mx-5 overflow-x-auto px-5">
+          <div className="-mx-5 mt-3 overflow-x-auto px-5">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-neutral-200 text-left text-xs text-neutral-500 uppercase dark:border-neutral-800 dark:text-neutral-500">
@@ -310,22 +321,33 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
                         {portfolio.name}
                       </Link>
                     </td>
-                    <td className="py-2 pr-3 tabular-nums text-neutral-700 dark:text-neutral-300">
+                    <td className="py-2 pr-3 text-neutral-700 tabular-nums dark:text-neutral-300">
                       {holding.quantity}
                     </td>
-                    <td className="py-2 pr-3 tabular-nums text-neutral-700 dark:text-neutral-300">
+                    <td className="py-2 pr-3 text-neutral-700 tabular-nums dark:text-neutral-300">
                       {holdingValuation
-                        ? formatCurrency(holdingValuation.performance.marketValue, settings.baseCurrency)
-                        : formatCurrency(holding.quantity * holding.averageCost, settings.baseCurrency)}
+                        ? formatCurrency(
+                            holdingValuation.performance.marketValue,
+                            settings.baseCurrency
+                          )
+                        : formatCurrency(
+                            holding.quantity * holding.averageCost,
+                            settings.baseCurrency
+                          )}
                     </td>
-                    <td className="py-2 pr-3 tabular-nums text-neutral-700 dark:text-neutral-300">
-                      {holdingValuation ? formatPercent(holdingValuation.performance.allocationPercent) : "—"}
+                    <td className="py-2 pr-3 text-neutral-700 tabular-nums dark:text-neutral-300">
+                      {holdingValuation
+                        ? formatPercent(holdingValuation.performance.allocationPercent)
+                        : "—"}
                     </td>
                     <td
                       className={`py-2 tabular-nums ${holdingValuation ? gainLossClasses(holdingValuation.performance.unrealisedGain) : ""}`}
                     >
                       {holdingValuation
-                        ? formatSignedCurrency(holdingValuation.performance.unrealisedGain, settings.baseCurrency)
+                        ? formatSignedCurrency(
+                            holdingValuation.performance.unrealisedGain,
+                            settings.baseCurrency
+                          )
                         : "—"}
                     </td>
                   </tr>
@@ -396,7 +418,7 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
             <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
               Research completeness
             </h3>
-            <span className="text-sm font-semibold tabular-nums text-neutral-700 dark:text-neutral-300">
+            <span className="text-sm font-semibold text-neutral-700 tabular-nums dark:text-neutral-300">
               {Math.round(researchCompletePercent * 100)}%
             </span>
           </div>
@@ -405,7 +427,11 @@ export default async function CompanyOverviewPage({ params }: { params: Promise<
               <li key={item.label} className="flex items-center gap-2">
                 <span
                   aria-hidden="true"
-                  className={item.present ? "text-emerald-600 dark:text-emerald-400" : "text-neutral-400 dark:text-neutral-600"}
+                  className={
+                    item.present
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-neutral-400 dark:text-neutral-600"
+                  }
                 >
                   {item.present ? "✓" : "○"}
                 </span>

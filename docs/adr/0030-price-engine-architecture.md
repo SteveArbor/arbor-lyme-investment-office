@@ -19,10 +19,10 @@ Separately, ADR 0006 named `MarketDataProvider` as one of six vendor-neutral
 provider interfaces to build, as a single flat contract
 (`docs/provider-architecture.md`: `getQuote`/`getQuotes`/
 `getHistoricalPrices`/`searchInstruments`/`getInstrumentDetails`). That ADR's
-own Future Review Criteria anticipated this moment exactly: *"Revisit
+own Future Review Criteria anticipated this moment exactly: _"Revisit
 per-interface if a specific abstraction proves to leak... at that point, the
 interface itself needs redesign, which is a normal and expected outcome of
-designing an interface before more than one implementation exists."* A flat
+designing an interface before more than one implementation exists."_ A flat
 `MarketDataProvider` leaks the moment a second, genuinely different provider
 (a fund NAV source) needs to sit behind the same call site as an equity
 quote source — this ADR is that redesign, triggered exactly as ADR 0006
@@ -76,7 +76,7 @@ none implemented):
   "last known good" price of each security, matching the refresh sequence
   `docs/data-flow.md` §4 already designed: a refresh (manual or scheduled)
   upserts here; a provider failure leaves the prior row in place rather
-  than deleting it, so a caller always has *some* quote, with
+  than deleting it, so a caller always has _some_ quote, with
   `sourceTimestamp` (the exact field name `docs/rules-engine.md`'s
   stale-data rule already uses) making its staleness visible rather than
   hidden.
@@ -90,10 +90,10 @@ the same way, not a market-data-specific error shape.
 
 ### Refresh strategy
 
-| | Exchange-traded (Stage 1) | Funds (Stage 2) |
-| --- | --- | --- |
-| Manual (user-triggered) refresh | Supported | Not offered — a daily NAV has nothing new to fetch mid-session |
-| Scheduled (overnight) refresh | Supported | The only refresh path — once daily, matching how the fund itself is priced |
+|                                 | Exchange-traded (Stage 1) | Funds (Stage 2)                                                            |
+| ------------------------------- | ------------------------- | -------------------------------------------------------------------------- |
+| Manual (user-triggered) refresh | Supported                 | Not offered — a daily NAV has nothing new to fetch mid-session             |
+| Scheduled (overnight) refresh   | Supported                 | The only refresh path — once daily, matching how the fund itself is priced |
 
 Both triggers do the same thing: call `PriceEngine.getPrice(s)`, upsert the
 result via `QuoteRepository`, publish `PriceUpdated` (the event shape
@@ -117,7 +117,7 @@ coverage by name, which this stage genuinely needs (ASML is a real holding).
 
 **Refresh:** both manual and overnight-scheduled, per the table above.
 
-**What Stage 1 does *not* need:** any change to `QuoteRepository`'s shape,
+**What Stage 1 does _not_ need:** any change to `QuoteRepository`'s shape,
 any change to `PriceEngine`'s interface, or a second provider — it's a
 single routing-table entry (three `SecurityType`s, one provider instance)
 plus one concrete `SecurityPriceProvider` implementation. This is the
@@ -144,8 +144,8 @@ Portfolio Performance panel): it satisfies the interface (so `fund` has a
 routing-table entry, and nothing about `PriceEngine`'s contract has a
 "funds aren't really supported yet" carve-out visible to callers), but its
 implementation is "return the price a user most recently entered," not a
-live vendor call. This keeps the *architecture* fund-ready — swapping in a
-real fund-NAV vendor later is a routing-table change, not a redesign — 
+live vendor call. This keeps the _architecture_ fund-ready — swapping in a
+real fund-NAV vendor later is a routing-table change, not a redesign —
 without buying data nobody has priced yet.
 
 **Refresh:** scheduled only (daily), matching how OEIC/unit trust NAVs are
@@ -201,7 +201,7 @@ a NAV-once-a-day fund could have changed mid-session.
   already-GBP-converted price.** Rejected: a price provider silently
   applying a currency conversion the caller can't see or override
   contradicts this platform's "no invented data" principle applied to
-  *rates*, not just prices — and it would make the FX rate itself
+  _rates_, not just prices — and it would make the FX rate itself
   unswappable independent of the price vendor, when in practice a
   dedicated FX-rate vendor is a completely reasonable, separate choice.
 - **Build the Stage 2 fund provider against Exchange Data International or
@@ -209,7 +209,7 @@ a NAV-once-a-day fund could have changed mid-session.
   neither vendor's pricing is public; committing budget to an enterprise
   quote before a single fund price is actually needed live is the
   over-engineering this milestone's brief explicitly warned against.
-  Revisit once Stage 1 is live and the fund gap is the *remaining* problem,
+  Revisit once Stage 1 is live and the fund gap is the _remaining_ problem,
   not a theoretical one.
 - **Build the concrete `RoutingPriceEngine` router class now, since it has
   no vendor dependencies.** Considered, since the router itself is pure

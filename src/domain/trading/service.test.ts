@@ -784,12 +784,7 @@ describe("TradingService history and filtering", () => {
     const { service, portfolio } = buildService(10_000);
     await service.recordFee(OWNER, portfolio.id, { amount: 1, occurredAt, notes: null }, "c1");
     await service.recordFee(OWNER, portfolio.id, { amount: 2, occurredAt, notes: null }, "c2");
-    await service.recordInterest(
-      OWNER,
-      portfolio.id,
-      { amount: 3, occurredAt, notes: null },
-      "c3"
-    );
+    await service.recordInterest(OWNER, portfolio.id, { amount: 3, occurredAt, notes: null }, "c3");
 
     const feesOnly = await service.listTransactionsFiltered(OWNER, portfolio.id, {
       type: "fee",

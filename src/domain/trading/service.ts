@@ -17,11 +17,7 @@ import {
   taxInputSchema,
   type Transaction,
 } from "./model";
-import type {
-  TransactionListFilter,
-  TransactionPage,
-  TransactionRepository,
-} from "./repository";
+import type { TransactionListFilter, TransactionPage, TransactionRepository } from "./repository";
 
 export interface TransactionRecordedPayload {
   transactionId: string;

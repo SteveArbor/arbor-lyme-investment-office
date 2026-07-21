@@ -25,7 +25,8 @@ function makeDeps(overrides: {
   const upserted = overrides.upserted ?? [];
   return {
     priceEngine: {
-      getPrice: overrides.getPrice ?? (async (identifier: SecurityIdentifier) => makeQuote(identifier)),
+      getPrice:
+        overrides.getPrice ?? (async (identifier: SecurityIdentifier) => makeQuote(identifier)),
     },
     quoteRepository: {
       getLatest: overrides.getLatest ?? (async () => null),
@@ -41,7 +42,13 @@ describe("refreshPrices", () => {
     const upserted: PriceQuote[] = [];
     const deps = makeDeps({ upserted });
     const securities: RefreshableSecurity[] = [
-      { companyId: "c1", ticker: "NVDA", exchange: "NASDAQ", currency: "USD", securityType: "equity" },
+      {
+        companyId: "c1",
+        ticker: "NVDA",
+        exchange: "NASDAQ",
+        currency: "USD",
+        securityType: "equity",
+      },
       { companyId: "c2", ticker: "TSM", exchange: "NYSE", currency: "USD", securityType: "equity" },
     ];
 
@@ -66,7 +73,13 @@ describe("refreshPrices", () => {
       getLatest: async () => stored,
     });
     const securities: RefreshableSecurity[] = [
-      { companyId: "c1", ticker: "NVDA", exchange: "NASDAQ", currency: "USD", securityType: "equity" },
+      {
+        companyId: "c1",
+        ticker: "NVDA",
+        exchange: "NASDAQ",
+        currency: "USD",
+        securityType: "equity",
+      },
     ];
 
     const results = await refreshPrices(deps, OWNER, securities);
@@ -83,7 +96,13 @@ describe("refreshPrices", () => {
       },
     });
     const securities: RefreshableSecurity[] = [
-      { companyId: "c1", ticker: "NVDA", exchange: "NASDAQ", currency: "USD", securityType: "equity" },
+      {
+        companyId: "c1",
+        ticker: "NVDA",
+        exchange: "NASDAQ",
+        currency: "USD",
+        securityType: "equity",
+      },
       { companyId: "c2", ticker: "BJMD6R8", exchange: "", currency: "GBP", securityType: "fund" },
     ];
 
@@ -112,11 +131,24 @@ describe("refreshPrices", () => {
         if (identifier.ticker === "BROKEN") throw new Error("provider unavailable");
         return makeQuote(identifier);
       },
-      getLatest: async (_ownerId, identifier) => (identifier.ticker === "BROKEN" ? previousQuote : null),
+      getLatest: async (_ownerId, identifier) =>
+        identifier.ticker === "BROKEN" ? previousQuote : null,
     });
     const securities: RefreshableSecurity[] = [
-      { companyId: "c1", ticker: "NVDA", exchange: "NASDAQ", currency: "USD", securityType: "equity" },
-      { companyId: "c2", ticker: "BROKEN", exchange: "NASDAQ", currency: "USD", securityType: "equity" },
+      {
+        companyId: "c1",
+        ticker: "NVDA",
+        exchange: "NASDAQ",
+        currency: "USD",
+        securityType: "equity",
+      },
+      {
+        companyId: "c2",
+        ticker: "BROKEN",
+        exchange: "NASDAQ",
+        currency: "USD",
+        securityType: "equity",
+      },
     ];
 
     const results = await refreshPrices(deps, OWNER, securities);

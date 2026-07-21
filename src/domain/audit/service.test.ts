@@ -11,7 +11,11 @@ class FakeAuditRepository implements AuditRepository {
     this.inserted.push(record);
   }
 
-  async listByEntity(actorId: string, entityType: string, entityId: string): Promise<AuditRecord[]> {
+  async listByEntity(
+    actorId: string,
+    entityType: string,
+    entityId: string
+  ): Promise<AuditRecord[]> {
     return this.inserted
       .filter(
         (record) =>

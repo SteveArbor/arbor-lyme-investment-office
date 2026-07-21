@@ -250,7 +250,7 @@ HL Stocks & Shares ISA plus WPP. Found and fixed three real defects:
    for any non-2xx HTTP status.** Twelve Data mixes two failure
    conventions — HTTP 200 with `{status:"error"}` in the body (the
    documented case) and, for plan-tier restrictions, a genuine non-2xx
-   status *with the same informative body attached* — but the client only
+   status _with the same informative body attached_ — but the client only
    parsed the body on the 200 path, surfacing a bare "HTTP 404" instead of
    the vendor's actual "this symbol needs the Grow/Venture plan" message.
    Fixed by reading the body first regardless of status, before falling
@@ -332,7 +332,7 @@ Dashboard, and (for a single company) the Company overview page, so none
 of them can ever disagree about how a holding was converted. **No page
 calls Twelve Data or ECB directly during ordinary rendering** — every
 vendor call happens exclusively inside the "Refresh prices" action
-(`refreshMarketDataAction`, which now refreshes quotes *and* FX rates
+(`refreshMarketDataAction`, which now refreshes quotes _and_ FX rates
 together, with the same per-item resilience as before: one failure never
 blocks the rest, and a failed refresh never erases a valid prior value).
 Manual price entry (funds, plus ASML/WPP while ungated Twelve Data
@@ -353,7 +353,7 @@ exactly on every total. 37 test files / 268 tests passing (36 new since
 Stage 1); lint/typecheck/build all clean.
 
 **Known, disclosed limitations (see ADR 0032 and Technical Debt):** daily
-change is computed using *today's* FX rate applied to yesterday's price
+change is computed using _today's_ FX rate applied to yesterday's price
 (no FX rate history is maintained — out of scope this milestone); the
 Dashboard's "largest daily gainer/loser" can mislabel the smallest gain as
 a "loser" when every holding moved the same direction on the day — the
@@ -502,17 +502,17 @@ already own.
 
 # Infrastructure
 
-| Component      | Status      | Notes                                                                                                                                                       |
-| -------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Next.js        | Implemented | 16.2.10, App Router, Server Actions as the entire API surface today.                                                                                        |
-| Supabase       | Implemented | Live dev project `arbor-lyme-capital-dev` (us-east-1), provisioned Phase 2.5.                                                                               |
-| PostgreSQL     | Implemented | 19 migrations applied to the live project, confirmed via `supabase migration list` (`fx_rates` table + `market_quotes` extensions pushed and live-verified this milestone). RLS + atomic RPCs throughout. |
-| Authentication | Implemented | Supabase Auth, admin-provisioned users only, trigger-based profile creation.                                                                                |
-| Hosting        | Planned     | No Vercel project exists yet; `docs/vercel-preparation.md` is prep-only.                                                                                    |
-| CI/CD          | Partial     | GitHub Actions runs format/lint/typecheck/unit tests/audit/build; no e2e in CI; no deploy pipeline (no host to deploy to yet).                              |
-| Testing        | Partial     | 314 unit tests, 7/8 e2e (1 skipped, needs live creds — now available), live DB integration validation both throwaway and real, plus full manual browser passes against live infrastructure. No component-level UI tests. |
-| Logging        | Implemented | Structured logger (`src/lib/logger.ts`), used in Server Action catch blocks and the RPC error mapper.                                                       |
-| Monitoring     | Planned     | No APM/observability platform beyond application logs; no alerting.                                                                                         |
+| Component      | Status                     | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Next.js        | Implemented                | 16.2.10, App Router, Server Actions as the entire API surface today.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Supabase       | Implemented                | Live dev project `arbor-lyme-capital-dev` (us-east-1), provisioned Phase 2.5.                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| PostgreSQL     | Implemented                | 19 migrations applied to the live project, confirmed via `supabase migration list` (`fx_rates` table + `market_quotes` extensions pushed and live-verified this milestone). RLS + atomic RPCs throughout.                                                                                                                                                                                                                                                                                                                                                   |
+| Authentication | Implemented                | Supabase Auth, admin-provisioned users only, trigger-based profile creation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Hosting        | Planned                    | No Vercel project exists yet; `docs/vercel-preparation.md` is prep-only.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| CI/CD          | Partial                    | GitHub Actions runs format/lint/typecheck/unit tests/audit/build; no e2e in CI; no deploy pipeline (no host to deploy to yet).                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Testing        | Partial                    | 314 unit tests, 7/8 e2e (1 skipped, needs live creds — now available), live DB integration validation both throwaway and real, plus full manual browser passes against live infrastructure. No component-level UI tests.                                                                                                                                                                                                                                                                                                                                    |
+| Logging        | Implemented                | Structured logger (`src/lib/logger.ts`), used in Server Action catch blocks and the RPC error mapper.                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Monitoring     | Planned                    | No APM/observability platform beyond application logs; no alerting.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | Market data    | Implemented, live-verified | Price Engine Stage 1 (Twelve Data, exchange-traded securities) + FX conversion (ECB daily reference rates, ADR 0032) both live-verified against the real HL Stocks & Shares ISA: NVIDIA/Broadcom/AMD/TSMC/e.l.f. Beauty refresh and convert to GBP correctly; ASML/WPP correctly, persistently manually priced (Twelve Data's free tier doesn't cover their exchanges). Dashboard/Portfolio/Company pages all read persisted data only — no vendor call outside the explicit refresh action. Stage 2 (fund NAVs) and scheduled refresh both still deferred. |
 
 ---
@@ -803,7 +803,7 @@ anything in this area needs revisiting:
   reference rate is the right shape of data for decision support, not
   trade execution); conversion built into `domain/portfolio/performance.ts`
   as one structural choke point (`currentPriceBase = currentPrice *
-  fxRateToBase`); cost basis confirmed to already be GBP-denominated at
+fxRateToBase`); cost basis confirmed to already be GBP-denominated at
   each trade's historical rate, no historical transaction altered; a new
   shared `buildPortfolioValuation` composer used identically by the
   Dashboard, Portfolio, and Company pages so persisted quotes propagate

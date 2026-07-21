@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ProviderAuthError, ProviderRateLimitError, ProviderUnavailableError } from "@/domain/shared";
+import {
+  ProviderAuthError,
+  ProviderRateLimitError,
+  ProviderUnavailableError,
+} from "@/domain/shared";
 
 import { twelveDataGet } from "./twelve-data-client";
 
@@ -45,9 +49,11 @@ describe("twelveDataGet", () => {
   it("maps Twelve Data's body-level error convention (HTTP 200) to the matching domain error", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        jsonResponse(200, { status: "error", code: 401, message: "invalid apikey" })
-      )
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(200, { status: "error", code: 401, message: "invalid apikey" })
+        )
     );
 
     await expect(twelveDataGet("/quote", { symbol: "NVDA" }, "key")).rejects.toThrow(

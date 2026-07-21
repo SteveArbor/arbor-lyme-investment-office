@@ -102,7 +102,7 @@ directly, in plain TypeScript, no external dependency:
   rather than the primary method gets the speed of Newton-Raphson and the
   robustness of bisection.
 - **A simple (non-time-weighted) total return percentage instead of
-  XIRR.** Rejected as the *only* return figure — `totalReturnPercent`
+  XIRR.** Rejected as the _only_ return figure — `totalReturnPercent`
   (relative to net contributions) already exists in
   `PortfolioPerformance` for exactly this simpler case; XIRR is additive,
   not a replacement, because it answers a genuinely different question

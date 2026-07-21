@@ -114,7 +114,7 @@ correction to a mistake.
   happen to the portfolio, not things the user decides to move. Keeping
   them as distinct top-level types also makes filtering/reporting
   (`Transactions Support: Buy, Sell, Dividend, Fee, Interest, Tax, Cash
-  Adjustment` — Milestone 2.7's own requirement) directly map onto
+Adjustment` — Milestone 2.7's own requirement) directly map onto
   `transactions.type` rather than requiring a type-plus-category compound
   filter for the common case.
 - **Linking a `fee` row to its trade via a nullable `related_transaction_id`

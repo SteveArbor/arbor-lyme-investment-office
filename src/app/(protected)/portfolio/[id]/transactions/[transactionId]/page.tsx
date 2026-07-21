@@ -86,9 +86,7 @@ export default async function TransactionDetailPage({
             </dd>
           </div>
           <div>
-            <dt className="text-xs font-medium tracking-wide text-neutral-500 uppercase">
-              Amount
-            </dt>
+            <dt className="text-xs font-medium tracking-wide text-neutral-500 uppercase">Amount</dt>
             <dd className="mt-1 font-semibold text-neutral-900 dark:text-neutral-100">
               {formatCurrency(transaction.amount, currency)}
             </dd>

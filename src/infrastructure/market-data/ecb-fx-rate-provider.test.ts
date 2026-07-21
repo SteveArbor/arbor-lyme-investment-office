@@ -89,7 +89,10 @@ describe("EcbFxRateProvider", () => {
   });
 
   it("throws ProviderUnavailableError if the feed doesn't parse as expected", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(textResponse(200, "<not>the expected format</not>")));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(textResponse(200, "<not>the expected format</not>"))
+    );
     const provider = new EcbFxRateProvider();
 
     await expect(provider.getRate("USD", "GBP")).rejects.toThrow(ProviderUnavailableError);

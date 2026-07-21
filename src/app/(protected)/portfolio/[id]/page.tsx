@@ -121,7 +121,11 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
       </div>
 
       <div className="mt-6">
-        <PortfolioPerformancePanel portfolioId={id} baseCurrency={baseCurrency} valuation={valuation} />
+        <PortfolioPerformancePanel
+          portfolioId={id}
+          baseCurrency={baseCurrency}
+          valuation={valuation}
+        />
       </div>
     </main>
   );

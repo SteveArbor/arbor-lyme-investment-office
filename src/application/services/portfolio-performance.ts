@@ -79,8 +79,7 @@ export async function buildPortfolioPerformanceData(
     (transaction) => transaction.type === "cash_adjustment" && transaction.category === "deposit"
   );
   const withdrawals = transactions.filter(
-    (transaction) =>
-      transaction.type === "cash_adjustment" && transaction.category === "withdrawal"
+    (transaction) => transaction.type === "cash_adjustment" && transaction.category === "withdrawal"
   );
   const netContributions =
     deposits.reduce((sum, transaction) => sum + transaction.amount, 0) +

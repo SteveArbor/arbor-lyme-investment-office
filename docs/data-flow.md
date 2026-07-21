@@ -197,7 +197,7 @@ sequenceDiagram
   silently presented as "live."
 - **Failure handling:** a provider error (`ProviderRateLimitError`,
   `ProviderUnavailableError` — `provider-architecture.md`) leaves the prior
-  price *or* FX rate in place with its existing (now more stale) timestamp,
+  price _or_ FX rate in place with its existing (now more stale) timestamp,
   independently per security/currency pair — one failure never blocks the
   rest of a refresh (ADR 0031/0032). Staleness is computed at render time
   from that timestamp (`calculateQuoteAge`/`calculateFxRateAge`), never a

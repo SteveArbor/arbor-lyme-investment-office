@@ -79,7 +79,8 @@ export function generatePortfolioInsights(input: PortfolioInsightsInput): Portfo
 
   if (input.concentrationWarnings.length >= 2) {
     insights.push({
-      message: "Portfolio is becoming concentrated across more than one dimension — worth a closer look.",
+      message:
+        "Portfolio is becoming concentrated across more than one dimension — worth a closer look.",
       severity: "warning",
     });
   }

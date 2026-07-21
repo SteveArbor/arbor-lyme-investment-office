@@ -1,6 +1,6 @@
 import type { Company } from "@/domain/company";
 import { deriveCountryFromExchange } from "@/domain/company";
-import { type AllocationAction,calculateAllocationAction } from "@/domain/portfolio";
+import { type AllocationAction, calculateAllocationAction } from "@/domain/portfolio";
 import {
   calculateConcentrationWarnings,
   calculateCountryAllocation,

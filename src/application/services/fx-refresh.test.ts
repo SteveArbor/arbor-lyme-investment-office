@@ -6,7 +6,12 @@ import { type FxRefreshDependencies, refreshFxRates } from "./fx-refresh";
 
 const OWNER = "user-1";
 
-function makeRate(base: string, quote: string, rate: number, overrides: Partial<FxRate> = {}): FxRate {
+function makeRate(
+  base: string,
+  quote: string,
+  rate: number,
+  overrides: Partial<FxRate> = {}
+): FxRate {
   return {
     base,
     quote,

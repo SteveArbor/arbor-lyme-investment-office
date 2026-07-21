@@ -85,7 +85,12 @@ export async function refreshPrices(
 
       if (security.securityType === "fund") {
         const existing = await deps.quoteRepository.getLatest(ownerId, identifier);
-        return { companyId: security.companyId, outcome: "unsupported", quote: existing, error: null };
+        return {
+          companyId: security.companyId,
+          outcome: "unsupported",
+          quote: existing,
+          error: null,
+        };
       }
 
       const previous = await deps.quoteRepository.getLatest(ownerId, identifier);

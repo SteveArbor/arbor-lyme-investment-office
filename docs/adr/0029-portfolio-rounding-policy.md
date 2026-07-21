@@ -19,8 +19,8 @@ The cause was traced precisely: `calculatePortfolioPerformance`
 (`domain/portfolio/performance.ts`) sums each holding's raw
 `quantity × currentPrice` as JavaScript `number` values (IEEE-754 double
 precision) and rounds only once, when the total is formatted for display.
-The source spreadsheet instead summed ten values that were *each already
-rounded* to two decimal places. Summing unrounded figures and then
+The source spreadsheet instead summed ten values that were _each already
+rounded_ to two decimal places. Summing unrounded figures and then
 rounding once ("round-then-sum") and summing already-rounded figures
 ("sum-then-round") are both legitimate, standard techniques, but they are
 not required to agree — and won't, whenever the discarded fractional
@@ -51,17 +51,17 @@ ever rounds a number:
 Every table column that holds a financial figure has a fixed decimal
 scale, and PostgreSQL enforces it on every insert/update:
 
-| Value | Column(s) | Scale |
-| --- | --- | --- |
-| Cash, transaction amount, realised gain | `portfolios.cash`, `transactions.amount`, `transactions.realised_gain` | `numeric(18,2)` — 2dp (pence) |
-| Quantity, price, average cost | `holdings.quantity`, `holdings.average_cost`, `transactions.quantity`, `transactions.price_per_unit` | `numeric(18,6)` — 6dp |
-| Target allocation | `holdings.target_allocation_percent` | `numeric(5,4)` — 4dp fraction (0.0001 = 0.01%) |
+| Value                                   | Column(s)                                                                                            | Scale                                          |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Cash, transaction amount, realised gain | `portfolios.cash`, `transactions.amount`, `transactions.realised_gain`                               | `numeric(18,2)` — 2dp (pence)                  |
+| Quantity, price, average cost           | `holdings.quantity`, `holdings.average_cost`, `transactions.quantity`, `transactions.price_per_unit` | `numeric(18,6)` — 6dp                          |
+| Target allocation                       | `holdings.target_allocation_percent`                                                                 | `numeric(5,4)` — 4dp fraction (0.0001 = 0.01%) |
 
 Every atomic RPC (ADR 0025) computes its result — `quantity × price`,
 `quantity × (price − average_cost)`, the blended new average cost — using
 PostgreSQL's `numeric` type, which is exact, arbitrary-precision decimal
 arithmetic (unlike a binary float, `numeric` has no representation error
-at all: `0.1 + 0.2` is exactly `0.3`). The *only* rounding that ever
+at all: `0.1 + 0.2` is exactly `0.3`). The _only_ rounding that ever
 happens at this layer is PostgreSQL's implicit, deterministic truncation
 of that exact result to a column's declared scale on assignment — e.g.
 `cash - v_cost` (both `numeric(18,2)`) rounds `v_cost` to 2dp the moment
@@ -81,7 +81,7 @@ intermediate rounding whatsoever. A multi-step calculation (market value
 → unrealised gain → total return → XIRR) carries full float precision
 through every step, including sums across multiple holdings
 (`calculatePortfolioPerformance`'s `marketValue`/`costBasis` are the sum
-of each holding's *unrounded* `quantity × price`, not a sum of
+of each holding's _unrounded_ `quantity × price`, not a sum of
 already-rounded per-holding figures).
 
 Rounding happens exactly once, inside `src/lib/format.ts`, at the moment
@@ -135,7 +135,7 @@ against a lossy aggregate.
 - Multi-step derived figures (XIRR, blended average cost, allocation
   percent) are as accurate as IEEE-754 double precision allows — rounding
   an intermediate value at every step, instead, would make every one of
-  these *less* accurate, not more, since rounding error compounds across
+  these _less_ accurate, not more, since rounding error compounds across
   steps.
 - A future contributor who sees a platform total differ from a broker
   statement or export by a penny now has a named, understood explanation

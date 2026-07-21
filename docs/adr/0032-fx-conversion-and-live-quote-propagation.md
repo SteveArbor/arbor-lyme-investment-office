@@ -24,19 +24,19 @@ Portfolio, and Company pages, rather than confined to one panel.
 
 ## FX Provider Evaluation
 
-| | ECB daily reference rates | Twelve Data FX | Bank of England | Other (Fixer.io, exchangerate-api, etc.) |
-| --- | --- | --- | --- | --- |
-| Cost | Free, no key | Included in the existing Twelve Data plan, but FX endpoints sit behind the same tier restrictions already found gating LSE/Euronext equities (ADR 0031) | Free, no key | Free tiers exist but cap requests/month; paid tiers for reliability |
-| Data shape | Once-daily official reference rate (~16:00 CET) | Real-time/intraday | Once-daily (and historical series) spot rates, GBP-centric | Mixed — usually real-time, some daily |
-| Coverage of this platform's actual needs (USD, EUR, GBP) | All three, directly (EUR base) or via one cross-rate calculation | All three | GBP crosses only — no direct EUR/USD rate, would need its own cross-rate math anyway | All three, typically |
-| Reliability / authority | Official central-bank reference data, published on a fixed daily schedule, used throughout Europe as the standard reference rate | Reliable, but adds a second dependency on the same vendor already found to have real coverage gaps at the current plan tier | Official, authoritative, but UK-specific | Varies by vendor; none carry central-bank authority |
-| Fit for this platform | A daily reference rate is exactly right for a decision-support tool that revalues a portfolio once (or a few times) a day — paying for or depending on intraday FX volatility this platform never acts on intraday would be over-engineering | Real-time FX is capability this platform has no use for, at added cost/dependency risk | Good option, but requires computing EUR crosses manually with no advantage over ECB doing the same thing with EUR as its native base | No reputational/authority advantage over ECB, and would add a real ongoing cost or rate-limit risk for zero benefit |
+|                                                          | ECB daily reference rates                                                                                                                                                                                                                    | Twelve Data FX                                                                                                                                          | Bank of England                                                                                                                      | Other (Fixer.io, exchangerate-api, etc.)                                                                            |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Cost                                                     | Free, no key                                                                                                                                                                                                                                 | Included in the existing Twelve Data plan, but FX endpoints sit behind the same tier restrictions already found gating LSE/Euronext equities (ADR 0031) | Free, no key                                                                                                                         | Free tiers exist but cap requests/month; paid tiers for reliability                                                 |
+| Data shape                                               | Once-daily official reference rate (~16:00 CET)                                                                                                                                                                                              | Real-time/intraday                                                                                                                                      | Once-daily (and historical series) spot rates, GBP-centric                                                                           | Mixed — usually real-time, some daily                                                                               |
+| Coverage of this platform's actual needs (USD, EUR, GBP) | All three, directly (EUR base) or via one cross-rate calculation                                                                                                                                                                             | All three                                                                                                                                               | GBP crosses only — no direct EUR/USD rate, would need its own cross-rate math anyway                                                 | All three, typically                                                                                                |
+| Reliability / authority                                  | Official central-bank reference data, published on a fixed daily schedule, used throughout Europe as the standard reference rate                                                                                                             | Reliable, but adds a second dependency on the same vendor already found to have real coverage gaps at the current plan tier                             | Official, authoritative, but UK-specific                                                                                             | Varies by vendor; none carry central-bank authority                                                                 |
+| Fit for this platform                                    | A daily reference rate is exactly right for a decision-support tool that revalues a portfolio once (or a few times) a day — paying for or depending on intraday FX volatility this platform never acts on intraday would be over-engineering | Real-time FX is capability this platform has no use for, at added cost/dependency risk                                                                  | Good option, but requires computing EUR crosses manually with no advantage over ECB doing the same thing with EUR as its native base | No reputational/authority advantage over ECB, and would add a real ongoing cost or rate-limit risk for zero benefit |
 
 **Decision: European Central Bank daily reference rates**
 (`eurofxref-daily.xml`). Free, no API key, no rate limit, one HTTP request
 answers every currency this platform needs (the whole feed is a single
 small XML document), and — the deciding factor — its once-daily cadence is
-the *correct* shape of data for a platform whose own stated purpose is
+the _correct_ shape of data for a platform whose own stated purpose is
 decision support, not trade execution. Twelve Data's FX endpoints were
 ruled out primarily because they sit behind the same paid-tier wall ADR
 0031 already found blocking LSE/Euronext equity coverage — introducing a
@@ -69,7 +69,7 @@ hidden.
    `domain/portfolio/performance.ts`'s `HoldingPerformanceInput` now carries
    `currency` and an already-resolved `fxRateToBase` multiplier;
    `calculateHoldingPerformance` computes `currentPriceBase = currentPrice *
-   fxRateToBase` and every other money figure (`marketValue`,
+fxRateToBase` and every other money figure (`marketValue`,
    `unrealisedGain`, `dailyChangeAmountBase`) derives from that one value.
    `fxRateToBase` is always `1` for a holding whose currency already
    matches the base currency, which is what makes GBP→GBP a true identity
@@ -78,11 +78,11 @@ hidden.
    raw amounts** — this is requirement 9, made structurally true by this
    single choke point rather than policed by convention at every call
    site.
-3. **Resolving *which* rate applies is an application-layer concern**
+3. **Resolving _which_ rate applies is an application-layer concern**
    (`application/services/portfolio-valuation.ts`'s `buildPortfolioValuation`),
    not a domain one — the domain function only ever multiplies by whatever
    it's given. This mirrors exactly how `RoutingPriceEngine` resolves
-   *which* provider answers a price request while the provider itself just
+   _which_ provider answers a price request while the provider itself just
    answers it.
 4. **A live quote with no available FX rate is never guessed at.** If
    `buildPortfolioValuation` cannot find a stored rate for a holding's
@@ -95,7 +95,7 @@ hidden.
 
 **GBP**, per `settings.baseCurrency` — this milestone does not build
 multi-base-currency support (a user changing their base currency mid-flight
-is out of scope); it builds correct conversion *into* whatever the single
+is out of scope); it builds correct conversion _into_ whatever the single
 configured base currency is.
 
 ### Cost basis: stored in the base currency, at the historical trade-date rate
@@ -109,7 +109,7 @@ note"), and that GBP figure, not a USD one, is what was persisted at import
 time. **This milestone does not alter any historical transaction.** Cost
 basis is fixed at whatever FX rate applied on the historical trade date —
 exactly correct brokerage accounting — and this platform never re-derives
-or re-converts it using today's rate. Only the *live* market value
+or re-converts it using today's rate. Only the _live_ market value
 (today's quote × today's FX rate) is a moving, converted figure;
 `unrealisedGain = marketValueBase - costBasisBase` is therefore always a
 comparison of two genuinely base-currency figures, never a mix.
@@ -124,7 +124,7 @@ itself. Both refresh independently and both are resilient the same way:
 
 - **`FxRateRepository` is a "last known good" cache**, structurally
   identical to `QuoteRepository` — one row per currency pair, upserted on
-  success, *never deleted or overwritten on failure*. A failed ECB fetch
+  success, _never deleted or overwritten on failure_. A failed ECB fetch
   simply leaves the previous row exactly as it was.
 - **`EcbFxRateProvider` answers every requested pair from one HTTP call**,
   and resolves each pair independently after that single fetch — one

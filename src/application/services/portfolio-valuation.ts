@@ -155,7 +155,8 @@ export function buildPortfolioValuation(
     let fxRateToBase = 1;
     let previousClose: number | undefined;
     let fxRateMissing = false;
-    const isManual = company.securityType === "fund" || quote === null || quote.quality === "manual";
+    const isManual =
+      company.securityType === "fund" || quote === null || quote.quality === "manual";
 
     if (quote) {
       if (quote.currency === baseCurrency) {
