@@ -3,11 +3,11 @@ import Link from "next/link";
 
 import {
   buildCompanyMonitoringSnapshots,
+  buildPortfolioIntelligence,
   buildPortfolioPerformanceData,
   buildPortfolioValuation,
   type CompanyLookup,
   composeAppServices,
-  type HoldingValuation,
 } from "@/application/services";
 import { EmptyStateCard } from "@/components/ui/empty-state-card";
 import { cardClasses, inputClasses, labelClasses } from "@/components/ui/form-styles";
@@ -19,10 +19,22 @@ import {
   tableContainerClasses,
   tableHeadClasses,
 } from "@/components/ui/table";
+import { calculateJournalCompleteness } from "@/domain/journal";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
-import { formatCurrency, formatSignedCurrency, gainLossClasses } from "@/lib/format";
+import { formatCurrency, formatPercent, formatSignedCurrency, formatSignedPercent, gainLossClasses } from "@/lib/format";
 
 import { RATING_LABELS, THESIS_STATUS_LABELS } from "../companies/[id]/labels";
+import {
+  AllocationAnalysisTable,
+  HealthScoreCard,
+  InsightsPanel,
+  type JournalCompletenessRow,
+  JournalIntegrationPanel,
+  OpportunitiesPanel,
+  RecentActivityPanel,
+  RiskOverviewPanel,
+  UpcomingEventsPanel,
+} from "./intelligence-panels";
 
 export const metadata: Metadata = {
   title: "Dashboard — Arbor Lyme Capital",
@@ -99,10 +111,10 @@ export default async function DashboardPage({
   ]);
   const baseCurrency = settings.baseCurrency;
 
-  // "All portfolios" (no selection) is today's only consolidated view — a
-  // future milestone will build real cross-portfolio reporting; this
-  // selector's job for now is just letting the daily-workspace cards focus
-  // on one portfolio at a time instead of always summing every portfolio.
+  // "All portfolios" (no selection) combines every portfolio's data — see
+  // buildPortfolioIntelligence's own doc comment for the one disclosed
+  // limitation that comes with combining more than one (position/drift
+  // concentration not deduplicated by company across portfolios).
   const selectedPortfolioId =
     query.portfolio && allPortfolios.some((p) => p.id === query.portfolio)
       ? query.portfolio
@@ -111,7 +123,7 @@ export default async function DashboardPage({
     ? allPortfolios.filter((p) => p.id === selectedPortfolioId)
     : allPortfolios;
 
-  const [snapshots, performanceByPortfolio] = await Promise.all([
+  const [snapshots, performanceByPortfolio, transactionsByPortfolio] = await Promise.all([
     buildCompanyMonitoringSnapshots(
       services,
       user!.id,
@@ -126,6 +138,7 @@ export default async function DashboardPage({
         )
       )
     ),
+    Promise.all(portfolios.map((portfolio) => tradingService.listTransactions(user!.id, portfolio.id))),
   ]);
 
   // Live quote propagation (ADR 0032): the same persisted quotes and FX
@@ -168,57 +181,36 @@ export default async function DashboardPage({
     buildPortfolioValuation(data, companyLookupById, quotes, fxRates, baseCurrency, now)
   );
 
+  const intelligence = buildPortfolioIntelligence(valuations, companies, snapshots);
+
   const totalCash = portfolios.reduce((sum, portfolio) => sum + portfolio.cash, 0);
   const totalValue = valuations.reduce((sum, v) => sum + v.performance.totalValue, 0);
   const totalUnrealisedGain = valuations.reduce((sum, v) => sum + v.performance.unrealisedGain, 0);
+  const totalReturn = valuations.reduce((sum, v) => sum + v.performance.totalReturn, 0);
+  const totalReturnPercent =
+    // Weighted by each portfolio's own net contributions would be more
+    // precise, but PortfolioPerformance doesn't retain that figure in its
+    // output (only the ratio) — averaging the per-portfolio percentages is
+    // an accepted simplification when more than one portfolio is combined.
+    valuations.length > 0
+      ? valuations.reduce((sum, v) => sum + v.performance.totalReturnPercent, 0) / valuations.length
+      : 0;
   const totalHoldingsCount = performanceByPortfolio.reduce(
     (sum, data) => sum + data.holdings.length,
     0
   );
-  const totalRealisedReturn = performanceByPortfolio.reduce(
-    (sum, data) =>
-      sum + data.realisedGainTotal + data.dividendsReceived - data.feesPaid - data.taxesPaid,
-    0
-  );
+  const cashAllocationPercent = totalValue > 0 ? totalCash / totalValue : 0;
   const dailyGains = valuations.map((v) => v.performance.dailyGain).filter((g): g is number => g !== null);
   const totalDailyGain = dailyGains.length > 0 ? dailyGains.reduce((a, b) => a + b, 0) : null;
   const totalDailyGainPercent =
     totalDailyGain !== null && totalValue - totalDailyGain !== 0
       ? totalDailyGain / (totalValue - totalDailyGain)
       : null;
-  const quoteCoverage = valuations.reduce(
-    (acc, v) => ({
-      total: acc.total + v.quoteCoverage.total,
-      live: acc.live + v.quoteCoverage.live,
-      manual: acc.manual + v.quoteCoverage.manual,
-      stale: acc.stale + v.quoteCoverage.stale,
-    }),
-    { total: 0, live: 0, manual: 0, stale: 0 }
-  );
   const lastMarketUpdate = valuations.reduce<string | null>((latest, v) => {
     if (!v.lastMarketUpdate) return latest;
     if (!latest || v.lastMarketUpdate > latest) return v.lastMarketUpdate;
     return latest;
   }, null);
-  const allHoldingsWithDailyChange: HoldingValuation[] = valuations
-    .flatMap((v) => v.holdings)
-    .filter((h) => h.performance.dailyChangeAmountBase !== null);
-  const largestDailyGainer = allHoldingsWithDailyChange.reduce<HoldingValuation | null>(
-    (largest, h) =>
-      largest === null ||
-      h.performance.dailyChangeAmountBase! > largest.performance.dailyChangeAmountBase!
-        ? h
-        : largest,
-    null
-  );
-  const largestDailyLoser = allHoldingsWithDailyChange.reduce<HoldingValuation | null>(
-    (smallest, h) =>
-      smallest === null ||
-      h.performance.dailyChangeAmountBase! < smallest.performance.dailyChangeAmountBase!
-        ? h
-        : smallest,
-    null
-  );
   const currency = baseCurrency;
 
   const priorityActions: PriorityAction[] = [];
@@ -253,16 +245,42 @@ export default async function DashboardPage({
   priorityActions.sort((a, b) => a.weight - b.weight);
   const topActions = priorityActions.slice(0, 6);
 
+  const companyNameById = new Map(companies.map((company) => [company.id, company.name]));
+  const allTransactions = transactionsByPortfolio.flat();
+
+  const heldCompanyIds = new Set(valuations.flatMap((v) => v.holdings.map((h) => h.companyId)));
+  const journalRows: JournalCompletenessRow[] = [...heldCompanyIds].map((companyId) => {
+    const snapshot = snapshots.get(companyId);
+    const company = companies.find((c) => c.id === companyId);
+    const completeness = calculateJournalCompleteness(
+      snapshot?.openJournalEntry
+        ? {
+            risks: snapshot.openJournalEntry.risks,
+            invalidationConditions: snapshot.openJournalEntry.invalidationConditions,
+          }
+        : null,
+      snapshot?.thesisStatus ?? null
+    );
+    return {
+      companyId,
+      companyName: company?.name ?? companyId,
+      ticker: company?.ticker ?? "—",
+      completePercent: completeness.completePercent,
+      missingLabels: completeness.fields.filter((f) => !f.present).map((f) => f.label),
+      hasEntry: snapshot?.openJournalEntry !== null && snapshot?.openJournalEntry !== undefined,
+    };
+  });
+
   return (
     <main id="main-content" className="mx-auto max-w-6xl px-4 py-8">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
           <h1 className="text-2xl font-semibold text-neutral-900 dark:text-neutral-100">
-            Dashboard
+            Investment Briefing
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-neutral-600 dark:text-neutral-400">
-            Your daily workspace — portfolio position, research coverage, and what needs
-            attention next.
+            How your portfolio is performing, what changed today, where to focus, and what
+            opportunities exist.
           </p>
         </div>
         {allPortfolios.length > 1 ? (
@@ -292,77 +310,52 @@ export default async function DashboardPage({
         ) : null}
       </div>
 
+      {/* Top Summary */}
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <SummaryCard
-          label="Current portfolio value"
+          label="Total portfolio value"
           value={formatCurrency(totalValue, currency)}
           href={portfolios[0] ? `/portfolio/${portfolios[0].id}` : "/portfolio"}
         />
         <SummaryCard
-          label="Cash"
-          value={formatCurrency(totalCash, currency)}
-          href={portfolios[0] ? `/portfolio/${portfolios[0].id}` : "/portfolio"}
+          label="Today's gain/loss (£)"
+          value={
+            totalDailyGain !== null ? formatSignedCurrency(totalDailyGain, currency) : "No live quotes"
+          }
+          valueClassName={totalDailyGain !== null ? gainLossClasses(totalDailyGain) : undefined}
+        />
+        <SummaryCard
+          label="Today's gain/loss (%)"
+          value={totalDailyGainPercent !== null ? formatSignedPercent(totalDailyGainPercent, 2) : "—"}
+          valueClassName={
+            totalDailyGainPercent !== null ? gainLossClasses(totalDailyGainPercent) : undefined
+          }
+        />
+        <SummaryCard
+          label="Total return (£)"
+          value={formatSignedCurrency(totalReturn, currency)}
+          valueClassName={gainLossClasses(totalReturn)}
+        />
+        <SummaryCard
+          label="Total return (%)"
+          value={formatSignedPercent(totalReturnPercent)}
+          valueClassName={gainLossClasses(totalReturnPercent)}
+        />
+        <SummaryCard label="Cash" value={formatCurrency(totalCash, currency)} />
+        <SummaryCard label="Cash allocation" value={formatPercent(cashAllocationPercent)} />
+        <SummaryCard label="Holdings" value={String(totalHoldingsCount)} href="/portfolio" />
+        <SummaryCard label="Portfolios" value={String(allPortfolios.length)} href="/portfolio" />
+        <SummaryCard
+          label="Last market refresh"
+          value={
+            lastMarketUpdate ? new Date(lastMarketUpdate).toLocaleString("en-GB") : "No live quotes yet"
+          }
         />
         <SummaryCard
           label="Unrealised gain"
           value={formatSignedCurrency(totalUnrealisedGain, currency)}
           valueClassName={gainLossClasses(totalUnrealisedGain)}
-          href={portfolios[0] ? `/portfolio/${portfolios[0].id}` : "/portfolio"}
         />
-        <SummaryCard
-          label="Daily gain"
-          value={
-            totalDailyGain !== null ? formatSignedCurrency(totalDailyGain, currency) : "No live quotes"
-          }
-          valueClassName={totalDailyGain !== null ? gainLossClasses(totalDailyGain) : undefined}
-          subValue={
-            totalDailyGainPercent !== null
-              ? `${totalDailyGainPercent >= 0 ? "+" : ""}${(totalDailyGainPercent * 100).toFixed(2)}%`
-              : "Refresh a portfolio's prices to see"
-          }
-        />
-        <SummaryCard
-          label="Realised return"
-          value={formatSignedCurrency(totalRealisedReturn, currency)}
-          valueClassName={gainLossClasses(totalRealisedReturn)}
-          subValue="Realised gains + dividends − fees − taxes"
-        />
-        <SummaryCard
-          label="Quote coverage"
-          value={`${quoteCoverage.live} live · ${quoteCoverage.manual} manual`}
-          valueClassName={
-            quoteCoverage.stale > 0
-              ? "text-amber-700 dark:text-amber-400"
-              : "text-neutral-900 dark:text-neutral-100"
-          }
-          subValue={quoteCoverage.stale > 0 ? `${quoteCoverage.stale} stale` : "Last market update"}
-        />
-        <SummaryCard
-          label="Last market update"
-          value={lastMarketUpdate ? new Date(lastMarketUpdate).toLocaleString("en-GB") : "No live quotes yet"}
-        />
-        <SummaryCard
-          label="Largest daily gainer"
-          value={largestDailyGainer ? `${largestDailyGainer.companyName} (${largestDailyGainer.ticker})` : "—"}
-          valueClassName="text-emerald-700 dark:text-emerald-400"
-          subValue={
-            largestDailyGainer
-              ? formatSignedCurrency(largestDailyGainer.performance.dailyChangeAmountBase!, currency)
-              : undefined
-          }
-        />
-        <SummaryCard
-          label="Largest daily loser"
-          value={largestDailyLoser ? `${largestDailyLoser.companyName} (${largestDailyLoser.ticker})` : "—"}
-          valueClassName="text-red-700 dark:text-red-400"
-          subValue={
-            largestDailyLoser
-              ? formatSignedCurrency(largestDailyLoser.performance.dailyChangeAmountBase!, currency)
-              : undefined
-          }
-        />
-        <SummaryCard label="Holdings" value={String(totalHoldingsCount)} href="/portfolio" />
-        <SummaryCard label="Companies tracked" value={String(companies.length)} href="/companies" />
         <SummaryCard
           label="High priority actions"
           value={String(priorityActions.length)}
@@ -372,7 +365,38 @@ export default async function DashboardPage({
               : "text-neutral-900 dark:text-neutral-100"
           }
         />
-        <SummaryCard label="Portfolios" value={String(allPortfolios.length)} href="/portfolio" />
+      </div>
+
+      <div className="mt-8">
+        <HealthScoreCard health={intelligence.health} />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <AllocationAnalysisTable rows={intelligence.allocationRows} currency={currency} />
+        <OpportunitiesPanel opportunities={intelligence.opportunities} />
+      </div>
+
+      <div className="mt-6">
+        <RiskOverviewPanel
+          sectorAllocation={intelligence.sectorAllocation}
+          countryAllocation={intelligence.countryAllocation}
+          currencyExposure={intelligence.currencyExposure}
+          concentrationWarnings={intelligence.concentrationWarnings}
+        />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <InsightsPanel insights={intelligence.insights} />
+        <RecentActivityPanel
+          transactions={allTransactions}
+          companyNameById={companyNameById}
+          currency={currency}
+        />
+      </div>
+
+      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <JournalIntegrationPanel rows={journalRows} />
+        <UpcomingEventsPanel />
       </div>
 
       {topActions.length > 0 ? (
@@ -505,17 +529,17 @@ export default async function DashboardPage({
         <EmptyStateCard
           title="Daily briefing"
           description="An AI-assisted summary of your portfolio will appear here, built entirely from verified data."
-          phase="Planned — Phase 4"
+          phase="Planned — Phase 6"
         />
         <EmptyStateCard
           title="Alerts"
           description="Rule-driven signals and rating-change notifications will appear here."
-          phase="Planned — Phase 5"
+          phase="Planned — Phase 7"
         />
         <EmptyStateCard
           title="Reporting & benchmarking"
           description="Exportable period reports and benchmark comparisons will appear here."
-          phase="Planned — Phase 6"
+          phase="Planned — Phase 8"
         />
       </div>
     </main>

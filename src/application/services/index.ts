@@ -11,6 +11,8 @@ export type {
   MonitoringDependencies,
 } from "./monitoring";
 export { buildCompanyMonitoringSnapshot, buildCompanyMonitoringSnapshots } from "./monitoring";
+export type { AllocationRow, PortfolioIntelligence } from "./portfolio-intelligence";
+export { buildPortfolioIntelligence } from "./portfolio-intelligence";
 export type {
   PortfolioHoldingData,
   PortfolioPerformanceData,

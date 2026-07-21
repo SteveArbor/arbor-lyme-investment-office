@@ -4,28 +4,42 @@
 
 **Last Updated:** 2026-07-21
 **Current Version:** 0.1.0
-**Current Branch:** `foundation`
-**Current Milestone:** Phase 3.2 — FX Conversion and Live Quote Propagation
-(ADR 0032, implementation complete and **live-validated**, not yet
-committed)
-**Overall Status:** Healthy. The FX-conversion gap Price Engine Stage 1's
-live validation surfaced (a refreshed USD/EUR quote being summed into
-portfolio totals as if it were GBP) is now closed: a real `FxRateProvider`
-(the European Central Bank's free daily reference-rate feed) is
-implemented, and currency conversion is built into the domain calculation
-layer (`domain/portfolio/performance.ts`) as a single, structural choke
-point rather than policed by convention. Persisted quotes and FX rates now
-propagate consistently across the Dashboard, Portfolio, and Company
-pages — none of them ever call a vendor directly during ordinary
-rendering; every vendor call happens exclusively inside the explicit
-"Refresh prices" action. Manual price entry (for funds, and for ASML/WPP
-while Twelve Data's free tier doesn't cover their exchanges) is now
-genuinely persisted with a real effective date/age, not ephemeral typing.
-Live-validated against the real HL Stocks & Shares ISA: NVIDIA/Broadcom/
-AMD/TSMC/e.l.f. Beauty all convert USD→GBP correctly at a single
-consistent rate; ASML/WPP remain correctly, clearly manually priced.
-Paused at a deliberate decision boundary: commit approval for this
-milestone.
+**Current Branch:** `phase-4-investment-intelligence` (branched from `foundation` at `0f62681`)
+**Current Milestone:** Phase 4 — Investment Intelligence (ADR 0033,
+implementation complete and **browser-validated**, not yet committed)
+**Overall Status:** Healthy. Phase 3.2 (FX Conversion and Live Quote
+Propagation, ADR 0032) is complete and committed (`0f62681`, on
+`foundation`). Phase 4 transforms the Dashboard from a portfolio-management
+screen into an executive investment briefing: a deterministic, explainable
+Portfolio Health score; Risk Overview (sector/country/currency exposure,
+concentration warnings); an Opportunities panel (heuristic ranking,
+explicitly not a valuation model); rule-based Portfolio Insights; an
+Allocation Analysis table with a recommended action per holding; Recent
+Activity and Upcoming Events (placeholder); Investment Journal
+completeness tracking; and enhanced Company pages (position summary
+across every portfolio, research completeness, journal entries, Documents
+and Upcoming Events placeholders). Everything is built from data this
+platform already owns — no AI, no new vendor, no invented figures.
+
+Phase 3.2 (for reference, already committed): the FX-conversion gap Price
+Engine Stage 1's live validation surfaced (a refreshed USD/EUR quote being
+summed into portfolio totals as if it were GBP) was closed with a real
+`FxRateProvider` (the European Central Bank's free daily reference-rate
+feed), and currency conversion is built into the domain calculation layer
+(`domain/portfolio/performance.ts`) as a single, structural choke point
+rather than policed by convention. Persisted quotes and FX rates propagate
+consistently across the Dashboard, Portfolio, and Company pages — none of
+them ever call a vendor directly during ordinary rendering; every vendor
+call happens exclusively inside the explicit "Refresh prices" action.
+Manual price entry (for funds, and for ASML/WPP while Twelve Data's free
+tier doesn't cover their exchanges) is genuinely persisted with a real
+effective date/age, not ephemeral typing. Live-validated against the real
+HL Stocks & Shares ISA: NVIDIA/Broadcom/AMD/TSMC/e.l.f. Beauty all convert
+USD→GBP correctly at a single consistent rate; ASML/WPP remain correctly,
+clearly manually priced.
+
+Phase 4 is paused at a deliberate decision boundary: commit approval for
+this milestone, on its own feature branch.
 
 ---
 
@@ -346,6 +360,82 @@ a "loser" when every holding moved the same direction on the day — the
 same pre-existing convention `largestGain`/`largestLoss` (unrealised)
 already used, kept for consistency rather than fixed in isolation.
 
+**Phase 4 — Investment Intelligence**
+Commit pending, 2026-07-21, on branch `phase-4-investment-intelligence`.
+Turns the Dashboard from a portfolio-management screen into an executive
+investment briefing (ADR 0033) — every panel built from data this
+platform already owns, combined with deterministic rules; no AI, no new
+vendor dependency, nothing fabricated.
+
+_New domain logic (`domain/portfolio/`):_ `health.ts` (Portfolio Health —
+8 weighted, independently-explainable factors: diversification, cash
+allocation, sector/country/single-position concentration, liquidity,
+drift, missing research — combined into a 0–10 score, the same
+deterministic-and-explainable philosophy ADR 0023's Investment Rating
+already established); `risk.ts` (sector/country/currency exposure
+aggregation, concentration warnings against documented threshold
+guidelines); `opportunities.ts` (heuristic ranking — highest-conviction
+underweight, largest absolute/relative underweight, most attractive
+recent performer, cash available for deployment — explicitly a
+placeholder until a real valuation model exists, per the brief's own
+instruction); `insights.ts` (rule-based plain-English observations,
+reusing `risk.ts`'s warnings rather than re-deriving thresholds);
+`allocation.ts` (a deterministic increase/reduce/hold/watch recommendation
+per holding, with a `watch` override for a broken thesis or a sell/avoid
+rating regardless of drift). `domain/company/model.ts` gained
+`deriveCountryFromExchange` (a documented heuristic — NASDAQ/NYSE→United
+States, LSE→United Kingdom, Euronext Amsterdam→Netherlands — avoiding a
+new company data field for country exposure). `domain/journal/model.ts`
+gained `calculateJournalCompleteness` (six fields created atomically
+together by the existing journal-entry schema, so completeness is really
+"does an entry exist" for those six; `reviewDate` has no backing column
+and is always honestly reported absent — a disclosed gap, not an invented
+value).
+
+_New application composer:_ `application/services/portfolio-intelligence.ts`'s
+`buildPortfolioIntelligence` assembles Health/Risk/Opportunities/Insights/
+Allocation from `buildPortfolioValuation` (ADR 0032) output plus company
+monitoring snapshots (ADR 0024) — accepts one or more portfolios so the
+Dashboard's existing "All portfolios" view gets the same intelligence a
+single portfolio does. **Known, disclosed limitation:** holdings are not
+deduplicated by company across portfolios when combined — the same
+company held in two portfolios (this platform's own real accounts do
+this) produces two rows and slightly undercounts "largest single
+position"/drift; sector/country/currency totals are unaffected. Selecting
+a single portfolio never hits this. See ADR 0033.
+
+_UI:_ Dashboard rebuilt (`dashboard/page.tsx` + new
+`dashboard/intelligence-panels.tsx`) with Top Summary (10 figures
+including Today's/Total Gain in £ and %, Cash Allocation %), Portfolio
+Health card, Allocation Analysis table, Opportunities panel, Risk
+Overview (sector/country/currency bars + concentration warnings),
+Portfolio Insights, Recent Activity (real transactions), Investment
+Journal completeness list, and an honest Upcoming Events placeholder (no
+fabricated dates). Company pages enhanced with a Position Summary table
+(market value/allocation/return per portfolio, correctly recomputed
+against each portfolio's own total — not reused from a different
+portfolio's percentage), a real Research Completeness checklist (research
+notes/thesis/valuation/rating/journal — computed from actual domain data,
+not a placeholder), a Journal Entries summary, and honest Documents
+(Phase 3, not started) / Upcoming Events (Phase 5) placeholders. No
+charting library added — allocation/exposure bars are plain CSS.
+
+Live-validated in the browser: Portfolio Health scored and explained
+correctly for both a single portfolio and "All portfolios" combined; Risk
+Overview correctly flagged real concentration (GBP 63.3%, Fixed Income
+38.8%, Technology 32.2%, each above its guideline) against the live HL
+portfolio; Allocation Analysis and Opportunities correctly reflected that
+every HL holding currently has a 0% target allocation (a real, pre-
+existing data gap — no target allocations were ever set for the real
+import — not a code defect); Company page Position Summary correctly
+showed NVIDIA's two different allocation percentages in Core Growth
+Portfolio (14.8%) vs HL Stocks & Shares ISA (8.0%), each against its own
+portfolio total. One real bug found and fixed during validation: a
+React duplicate-key warning in the Allocation Analysis table, caused by
+the disclosed cross-portfolio non-deduplication above — fixed by keying
+each row on `companyId` plus its array index. 44 test files / 314 tests
+passing (46 new since Phase 3.2); lint/typecheck/build all clean.
+
 ---
 
 # Current Architecture
@@ -420,7 +510,7 @@ already own.
 | Authentication | Implemented | Supabase Auth, admin-provisioned users only, trigger-based profile creation.                                                                                |
 | Hosting        | Planned     | No Vercel project exists yet; `docs/vercel-preparation.md` is prep-only.                                                                                    |
 | CI/CD          | Partial     | GitHub Actions runs format/lint/typecheck/unit tests/audit/build; no e2e in CI; no deploy pipeline (no host to deploy to yet).                              |
-| Testing        | Partial     | 268 unit tests, 7/8 e2e (1 skipped, needs live creds — now available), live DB integration validation both throwaway and real, plus full manual browser passes against live infrastructure. No component-level UI tests. |
+| Testing        | Partial     | 314 unit tests, 7/8 e2e (1 skipped, needs live creds — now available), live DB integration validation both throwaway and real, plus full manual browser passes against live infrastructure. No component-level UI tests. |
 | Logging        | Implemented | Structured logger (`src/lib/logger.ts`), used in Server Action catch blocks and the RPC error mapper.                                                       |
 | Monitoring     | Planned     | No APM/observability platform beyond application logs; no alerting.                                                                                         |
 | Market data    | Implemented, live-verified | Price Engine Stage 1 (Twelve Data, exchange-traded securities) + FX conversion (ECB daily reference rates, ADR 0032) both live-verified against the real HL Stocks & Shares ISA: NVIDIA/Broadcom/AMD/TSMC/e.l.f. Beauty refresh and convert to GBP correctly; ASML/WPP correctly, persistently manually priced (Twelve Data's free tier doesn't cover their exchanges). Dashboard/Portfolio/Company pages all read persisted data only — no vendor call outside the explicit refresh action. Stage 2 (fund NAVs) and scheduled refresh both still deferred. |
@@ -594,38 +684,53 @@ automated).
 
 # Outstanding Roadmap
 
-**Phase 3 — Document Repository.** Managed source material — upload,
+**Renumbered 2026-07-21:** the phase sequence below reflects actual
+direction taken (Market Data Foundation and FX Conversion were built and
+labelled "Phase 3.1/3.2"; Investment Intelligence as "Phase 4") — the
+phases originally sketched here as 3/4 (Document Repository, AI Analysis)
+are renumbered forward to keep this document matching reality rather than
+a superseded plan. No scope changed, only the numbers.
+
+**Phase 5 — Document Repository.** Managed source material — upload,
 metadata, tagging, version history — attachable to companies, research
 notes, and journal entries, via a `StorageProvider` abstraction. Ships with
-a `NullDocumentProvider` (no OCR/extraction yet).
+a `NullDocumentProvider` (no OCR/extraction yet). This is the natural next
+milestone: Phase 4's Company page already has honest "Documents — Planned"
+placeholders waiting for it.
 
-**Phase 4 — AI Analysis and Daily Briefing.** The first real `AIProvider`
+**Phase 6 — AI Analysis and Daily Briefing.** The first real `AIProvider`
 implementation and the `ai` bounded context: brief generation, research AI
 summaries, opportunity narratives — strictly synthesis over data already
 computed and verified by earlier phases, never a source of a figure.
 
-**Phase 5 — Alerts and Notifications.** Rule/decision/portfolio-action
+**Phase 7 — Alerts and Notifications.** Rule/decision/portfolio-action
 triggered alerts with deduplication, plus a `NotificationProvider`
 (in-app first, email second) and an Alerts Center screen.
 
-**Phase 6 — Reporting, Benchmarking and Review Workflows.** Exportable
+**Phase 8 — Reporting, Benchmarking and Review Workflows.** Exportable
 period reports, benchmark comparison overlays, and a matured
 `DecisionReview`/research-thesis review-history workflow.
 
-**Phase 7 — Broker Import and Read-Only Integrations.** Read-only
+**Phase 9 — Broker Import and Read-Only Integrations.** Read-only
 statement/CSV or API-based broker data import behind a feature flag,
 reviewed before commit to the ledger — explicitly never order placement.
 
-**Phase 8 — Additional Arbor Lyme Capital Modules.** The deferred modules
+**Phase 10 — Additional Arbor Lyme Capital Modules.** The deferred modules
 named in `docs/feature-flags.md` (Property, Family Office, Tax Planning,
 Portfolio Sharing, Commercial Features), each scoped individually when its
 turn comes — intentionally a placeholder, not a committed backlog.
+
+**Also outstanding, smaller in scope:** Price Engine Stage 2 (fund NAV
+live pricing) and scheduled/overnight refresh — both explicitly deferred
+across ADR 0030/0031/0032; a `reviewDate` column for journal entries (ADR
+0033); cross-portfolio holding deduplication for the Dashboard's combined
+view (ADR 0033).
 
 ---
 
 # Open ADRs
 
-All 32 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
+All 33 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
 Dedicated, Non-Executing Domain), which is `Superseded by 0023`
 (Investment Rating / Portfolio Action split), and **ADR 0026** (Portfolio
 Accounting Principles), whose fee/interest/tax section is superseded by
@@ -709,23 +814,44 @@ anything in this area needs revisiting:
   change uses today's FX rate (no FX history maintained), and "largest
   daily gainer/loser" can mislabel a small gain as a loss when nothing
   actually lost value that day (see Technical Debt).
+- **ADR 0033** — Investment Intelligence. Portfolio Health (8 weighted,
+  explainable factors → a 0–10 score, same philosophy as ADR 0023's
+  rating), Risk Overview (sector/country/currency exposure derived from
+  `deriveCountryFromExchange`, a documented exchange→country heuristic —
+  no new company data field), Opportunities (heuristic ranking,
+  explicitly a placeholder until a real valuation model exists),
+  Portfolio Insights (rule-based, zero AI), and a deterministic per-
+  holding Allocation Action. Names two disclosed limitations worth a
+  future contributor's attention: combining more than one portfolio
+  doesn't deduplicate holdings by company (undercounts position
+  concentration for a company held in two portfolios; sector/country/
+  currency totals are unaffected), and `reviewDate` is named as a
+  required journal field but has no backing column yet — always reported
+  absent, not fabricated.
 
 ---
 
 # Recent Milestones
 
-1. **2026-07-21 — Phase 3.2: FX Conversion and Live Quote Propagation.**
+1. **2026-07-21 — Phase 4: Investment Intelligence.** Portfolio Health
+   score, Risk Overview, Opportunities panel, rule-based Portfolio
+   Insights, Allocation Analysis with recommended actions, Investment
+   Journal completeness, enhanced Company pages (position summary,
+   research completeness, journal entries). ADR 0033. Zero AI — every
+   panel deterministic, built from data already owned. Browser-validated.
+   On branch `phase-4-investment-intelligence`. Commit pending.
+2. **2026-07-21 — Phase 3.2: FX Conversion and Live Quote Propagation.**
    `EcbFxRateProvider` (ECB daily reference rates), currency conversion
    built into `domain/portfolio/performance.ts`, a shared
    `buildPortfolioValuation` composer used by Dashboard/Portfolio/Company
    pages alike, genuinely persisted manual pricing. ADR 0032. Closes the
    FX gap Stage 1's own live validation found. Live-validated against the
-   real HL Stocks & Shares ISA. Commit pending.
-2. **2026-07-21 — Price Engine Stage 1 Implementation.** Twelve Data-backed
+   real HL Stocks & Shares ISA. `0f62681`.
+3. **2026-07-21 — Price Engine Stage 1 Implementation.** Twelve Data-backed
    `SecurityPriceProvider`/`MarketStatusProvider`, `RoutingPriceEngine`,
    Postgres `QuoteRepository`, `companies.security_type`, price-quality/
    quote-age metadata, manual "Refresh prices" UI. ADR 0031. Scheduled
-   refresh deferred.
+   refresh deferred. `0f62681`.
 4. **2026-07-21 — ADR 0030 Price Engine Architecture + provider evaluation.**
    Provider-neutral, security-type-routed pricing interfaces; market-data
    vendor evaluation recommending Twelve Data. `aeb49a7`.
@@ -767,7 +893,7 @@ anything in this area needs revisiting:
 
 # Next Recommended Milestone
 
-**Phase 3 — Document Repository**
+**Phase 5 — Document Repository**
 
 **Purpose:** Give research, journal entries, and companies a place to
 attach and retrieve the actual source material a thesis is built on —
@@ -794,47 +920,52 @@ new ground this codebase hasn't covered yet.
 
 # Session Handover
 
-**Current state:** Phase 3.2 — FX Conversion and Live Quote Propagation
-(ADR 0032) is implemented, migrated to the live Supabase project, and
-**live-validated** end to end against the real HL Stocks & Shares ISA —
-`pnpm exec tsc --noEmit`, `pnpm exec eslint src --max-warnings=0`, `pnpm
-exec vitest run` (268/268), and `pnpm build` are all clean. This closes
-the FX-conversion gap Price Engine Stage 1's own live validation
-surfaced last session: NVIDIA/Broadcom/TSMC/AMD/e.l.f. Beauty all convert
-USD→GBP correctly at one consistent rate (verified by hand against the
-ECB feed); ASML/WPP correctly remain manually priced (EUR and GBP
-respectively), with a genuinely persisted (not ephemeral) manual-price
-save flow live-tested successfully, including the manual EUR entry itself
-converting to GBP correctly. Dashboard and Portfolio page agreed exactly
-on every total. Two minor, disclosed limitations remain (daily change
-uses today's FX rate; "largest daily loser" can mislabel a small gain
-when nothing actually lost value) — both documented in ADR 0032 and
-Technical Debt, neither blocking. It is **not yet committed**.
+**Current state:** Phase 3.2 (FX Conversion and Live Quote Propagation,
+ADR 0032) is complete, live-validated, and **committed** (`0f62681`, on
+`foundation`). Phase 4 (Investment Intelligence, ADR 0033) is built on top
+of it, on its own branch `phase-4-investment-intelligence`, and is
+**browser-validated** but **not yet committed**. `pnpm exec tsc --noEmit`,
+`pnpm exec eslint src --max-warnings=0`, `pnpm exec vitest run` (314/314),
+and `pnpm build` are all clean.
+
+Phase 4 turns the Dashboard from a portfolio-management screen into an
+executive investment briefing: Portfolio Health score, Risk Overview,
+Opportunities panel, rule-based Portfolio Insights, Allocation Analysis
+with a recommended action per holding, Recent Activity, an honest
+Upcoming Events placeholder, Investment Journal completeness, and
+enhanced Company pages (position summary across every portfolio,
+research completeness, journal entries, Documents/Upcoming Events
+placeholders). Every panel is deterministic — no AI, no new vendor
+dependency — built from data already owned (holdings, quotes, FX,
+thesis, valuation, decision, journal). Browser-validated against the real
+HL Stocks & Shares ISA and Core Growth Portfolio, in both single-
+portfolio and combined "All portfolios" views; one real bug (a React
+duplicate-key warning caused by the disclosed cross-portfolio
+non-deduplication limitation) was found and fixed during validation.
 
 **What should happen next:**
 
-1. Request commit approval for this milestone.
-2. Revoke the Twelve Data API key and Supabase Personal Access Token used
-   this session and last, if they're no longer needed on an ongoing basis.
-3. After committing, Phase 3 (Document Repository) remains the next
-   roadmap phase — still awaiting explicit approval to begin per
-   `CLAUDE.md`. The user may instead prefer to prioritize Stage 2 (fund
-   NAV pricing), scheduled refresh, or a Twelve Data plan upgrade (to
-   unlock live ASML/WPP pricing) — all now well-scoped follow-ups given
-   this milestone's live-validation findings.
+1. Request commit approval for Phase 4.
+2. After committing, merge `phase-4-investment-intelligence` back into
+   `foundation` (or open a PR) per the user's normal workflow — not done
+   automatically.
+3. Revoke the Twelve Data API key and Supabase Personal Access Token used
+   across this and the prior session, if no longer needed on an ongoing
+   basis.
+4. Decide the next milestone: Phase 5 (Document Repository, next in the
+   renumbered roadmap), Price Engine Stage 2 (fund NAV live pricing),
+   scheduled refresh, a Twelve Data plan upgrade (to unlock live ASML/WPP
+   pricing), or one of Phase 4's own named follow-ups (a `reviewDate`
+   column for journal entries; cross-portfolio holding deduplication).
 
 **Requiring user input:**
 
-- Commit approval for this milestone.
-- Priority for whichever follow-up is next: Phase 3, Stage 2 fund
-  pricing, scheduled refresh, or a Twelve Data plan upgrade.
-- Separately, Milestone 2.7 / HL import / ADR 0029 / ADR 0030 / Price
-  Engine Stage 1 (ADR 0031) are already committed (`445a547`, `c11b665`,
-  `aeb49a7`) or ready to commit alongside this milestone — no outstanding
-  approval blockers beyond the commit itself.
+- Commit approval for Phase 4.
+- Branch merge strategy (merge to `foundation`, or open a PR first).
+- Priority for the next milestone — see the options above.
 - If Vercel deployment is wanted at some point: creating that account/
   project is the same category of action Supabase project creation was —
   `docs/vercel-preparation.md` already establishes it as the user's call.
 
-**Known blockers:** None — live validation is complete and every
+**Known blockers:** None — browser validation is complete and every
 completion criterion for this milestone is met.

@@ -85,3 +85,27 @@ export const FOUNDATION_COMPANY_DEFAULTS: Pick<
   watchlist: false,
   securityType: "equity",
 };
+
+/**
+ * Country exposure (Phase 4 Portfolio Health/Risk Overview) is derived
+ * from `exchange` rather than stored as its own field — no new data entry
+ * is required, and a listing's exchange already is an authoritative fact
+ * about where a security trades. This is a deliberate heuristic, not a
+ * claim about where a company is domiciled or headquartered (ASML trades
+ * on Euronext Amsterdam but is a Dutch company either way; the two happen
+ * to agree here, not always true in general — e.g. a UK-listed ADR of a
+ * US company would map to "United Kingdom" by this function even though
+ * the underlying business is American). Extend this map, don't invent a
+ * guess, the first time a held company's exchange isn't listed here.
+ */
+const EXCHANGE_COUNTRY_MAP: Record<string, string> = {
+  NASDAQ: "United States",
+  NYSE: "United States",
+  LSE: "United Kingdom",
+  "Euronext Amsterdam": "Netherlands",
+  "Hargreaves Lansdown Fund Platform": "United Kingdom",
+};
+
+export function deriveCountryFromExchange(exchange: string): string {
+  return EXCHANGE_COUNTRY_MAP[exchange] ?? "Unknown";
+}

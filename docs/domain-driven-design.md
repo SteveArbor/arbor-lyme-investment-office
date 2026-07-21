@@ -35,11 +35,10 @@ functions intended for external use) or communicates via the event system
 | `valuation` | Base/bear/bull scenario valuation: EPS/growth assumptions, terminal multiple, discount rate, required return, margin of safety, scenario probabilities                                                                                                                                                                                 |
 | `decision`  | Produces `InvestmentRating` from company/analytics/rules/research inputs — never portfolio-aware (see `decision-engine.md`, ADR 0023)                                                                                                                                                                                                  |
 | `rules`     | Deterministic, versioned condition evaluation (see `rules-engine.md`)                                                                                                                                                                                                                                                                  |
-| `portfolio` | Portfolios, accounts, holdings/positions, cost basis, and the **Portfolio Engine** that computes `PortfolioAction` from `InvestmentRating` + portfolio state (ADR 0023)                                                                                                                                                                |
+| `portfolio` | Portfolios, accounts, holdings/positions, cost basis, the **Portfolio Engine** that computes `PortfolioAction` from `InvestmentRating` + portfolio state (ADR 0023), currency-converted performance (`performance.ts`, ADR 0032), and Phase 4's Investment Intelligence — Portfolio Health scoring, risk/concentration analysis, opportunity ranking, rule-based insights, and allocation-action recommendations (ADR 0033; absorbs what was originally sketched as `analytics`'s responsibility, see note below)                                                                                                                                                                |
 | `trading`   | Transactions (buys, sells, transfers, dividends, fees) — the ledger; auto-derives average cost, realised/unrealised gain                                                                                                                                                                                                               |
-| `journal`   | The Decision Journal: what was decided, why, and what would invalidate it, recorded at the time of action, with later outcome recording                                                                                                                                                                                                |
-| `market`    | Price data only: `MarketDataProvider` integration, price history, staleness tracking — narrowed from its original scope now that `company` owns the instrument/reference-data concept (see note below)                                                                                                                                 |
-| `analytics` | Performance, valuation-input calculations, allocation, and risk calculations derived from `portfolio`/`trading`/`market`/`company`                                                                                                                                                                                                     |
+| `journal`   | The Decision Journal: what was decided, why, and what would invalidate it, recorded at the time of action, with later outcome recording, plus a completeness check against the fields a well-formed entry should have (ADR 0033)                                                                                                       |
+| `market`    | Price and FX data: `SecurityPriceProvider`/`FxRateProvider` integration (ADR 0030/0032), quote/rate staleness tracking — narrowed from its original scope now that `company` owns the instrument/reference-data concept (see note below)                                                                                                                                 |
 | `ai`        | AI-generated content: briefs, summaries, opportunity generation — orchestrates `AIProvider` (see `provider-architecture.md`)                                                                                                                                                                                                           |
 | `alerts`    | Alert rules, alert generation, dismissal state                                                                                                                                                                                                                                                                                         |
 | `documents` | Document metadata, tagging, versioning, relationships to other contexts (see `document-management.md`)                                                                                                                                                                                                                                 |
@@ -59,6 +58,21 @@ exactly what varies with the market: prices and the provider integration
 that fetches them, keyed by the company's ticker. Every other domain
 (`research`, `valuation`, `decision`, `portfolio`, `trading`) references
 `companyId`, not an `assetId`/`market` construct.
+
+**Design note (Phase 4, resolving a `portfolio`/`analytics` overlap
+deliberately):** this table originally sketched a separate `analytics`
+context for performance/allocation/risk calculations derived from
+`portfolio`/`trading`/`market`/`company`. In practice, every one of those
+calculations (`performance.ts`'s currency-converted market value/gain,
+Phase 4's `health.ts`/`risk.ts`/`opportunities.ts`/`insights.ts`/
+`allocation.ts`) takes portfolio/holding state as its primary input and
+exists to answer questions specifically about a portfolio — a separate
+context would have meant `portfolio` and `analytics` importing back and
+forth for no real separation of concern, the same kind of leak ADR 0030's
+own Future Review Criteria warned an interface should be redesigned
+around once it's actually tested against a real requirement. `portfolio`
+owns this calculation layer directly; `analytics` was never built as its
+own folder.
 
 `settings` and `audit` are not "features" bolted on the side — they are bounded
 contexts in their own right, because they have their own model (an audit record is

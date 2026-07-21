@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { ThesisStatementStatus } from "@/domain/thesis";
+
 /**
  * The Decision Journal (docs/development-roadmap.md Phase 2, item 8):
  * captures the reasoning behind a position at the moment it is opened —
@@ -72,4 +74,69 @@ export function calculateHoldingPeriodDays(
   const millisPerDay = 1000 * 60 * 60 * 24;
   const days = (new Date(saleDate).getTime() - new Date(purchaseDate).getTime()) / millisPerDay;
   return Math.max(0, Math.round(days));
+}
+
+/**
+ * Journal completeness (Phase 4): every field an open `JournalEntry`
+ * actually requires is created together — `thesisSummary`/`risks`/
+ * `invalidationConditions`/`expectedReturnAtPurchase`/
+ * `convictionAtPurchase` are all mandatory at open time (`journalEntryOpenSchema`
+ * above), so there is no "partially filled in" entry today; the real
+ * incompleteness signal is coarser — whether an entry exists for this
+ * holding at all. `reviewDate` is listed because the brief names it as a
+ * field every investment should support, but no such column exists yet
+ * (`entry` is never assumed to carry one) — it is always reported absent,
+ * an honest gap this checklist surfaces rather than invents a value for
+ * (see ADR "Phase 4 — Investment Intelligence").
+ */
+export const JOURNAL_COMPLETENESS_FIELD_KEYS = [
+  "thesis",
+  "expectedOutcome",
+  "risks",
+  "confidence",
+  "exitStrategy",
+  "thesisStatus",
+  "reviewDate",
+] as const;
+export type JournalCompletenessFieldKey = (typeof JOURNAL_COMPLETENESS_FIELD_KEYS)[number];
+
+export interface JournalCompletenessField {
+  key: JournalCompletenessFieldKey;
+  label: string;
+  present: boolean;
+}
+
+export interface JournalCompleteness {
+  fields: JournalCompletenessField[];
+  /** Fraction of fields present, 0–1. */
+  completePercent: number;
+}
+
+export function calculateJournalCompleteness(
+  entry: Pick<JournalEntry, "risks" | "invalidationConditions"> | null,
+  thesisStatus: ThesisStatementStatus | null
+): JournalCompleteness {
+  const hasEntry = entry !== null;
+  const fields: JournalCompletenessField[] = [
+    { key: "thesis", label: "Investment thesis & reason for purchase", present: hasEntry },
+    { key: "expectedOutcome", label: "Expected outcome", present: hasEntry },
+    {
+      key: "risks",
+      label: "Risks",
+      present: hasEntry && entry.risks.trim().length > 0,
+    },
+    { key: "confidence", label: "Confidence", present: hasEntry },
+    {
+      key: "exitStrategy",
+      label: "Exit strategy",
+      present: hasEntry && entry.invalidationConditions.trim().length > 0,
+    },
+    { key: "thesisStatus", label: "Current thesis status", present: thesisStatus !== null },
+    { key: "reviewDate", label: "Review date", present: false },
+  ];
+
+  return {
+    fields,
+    completePercent: fields.filter((f) => f.present).length / fields.length,
+  };
 }
