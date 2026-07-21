@@ -100,6 +100,23 @@ export function CompanyForm() {
           />
         </div>
         <div>
+          <label htmlFor="securityType" className={labelClasses}>
+            Security type
+          </label>
+          <select
+            id="securityType"
+            name="securityType"
+            defaultValue="equity"
+            disabled={isPending}
+            className={inputClasses}
+          >
+            <option value="equity">Equity</option>
+            <option value="etf">ETF</option>
+            <option value="investment_trust">Investment trust</option>
+            <option value="fund">Fund (OEIC / unit trust)</option>
+          </select>
+        </div>
+        <div>
           <label htmlFor="status" className={labelClasses}>
             Status
           </label>

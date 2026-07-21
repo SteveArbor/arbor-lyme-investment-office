@@ -71,12 +71,26 @@ refinement of the decision ADR 0006 made (vendor-neutral interfaces,
 selected at composition time), not a reversal of it — ADR 0006's own Future
 Review Criteria anticipated this exact redesign.
 
-**Candidate implementations:** `AlphaVantageProvider`, `PolygonProvider`,
-`TwelveDataProvider`, `YahooFinanceProvider`. Different vendors have different
-coverage (equities vs. crypto vs. fx) and rate limits; the interface is
-deliberately vendor-neutral so a composite implementation (e.g., "use Polygon for
-US equities, fall back to TwelveData for FX") is possible later without touching
-`domain/market` or `domain/analytics`.
+**Implemented (Stage 1, ADR 0031):** `TwelveDataPriceProvider` (exchange-traded
+securities — equity/ETF/investment trust), assigned to those three
+`SecurityType` slots in `compose.ts`; `fund` deliberately left unset (Stage
+2, not yet built).
+
+**Implemented (`FxRateProvider`, ADR 0032):** `EcbFxRateProvider`
+(`infrastructure/market-data/ecb-fx-rate-provider.ts`) — the European
+Central Bank's free daily reference-rate feed, chosen over Twelve Data's
+own (paid-tier-gated) FX endpoints and over Bank of England data (ADR
+0032's provider evaluation) specifically because a once-daily official
+reference rate is the right shape of data for a decision-support platform,
+not a trading system. One HTTP call answers every currency pair this
+platform needs; cross-rates through EUR are computed for pairs (e.g.
+USD→GBP) ECB doesn't publish directly.
+
+**Candidate implementations for other providers/markets:** `AlphaVantageProvider`,
+`PolygonProvider`, `YahooFinanceProvider`. Different vendors have different
+coverage (equities vs. crypto) and rate limits; the interface is
+deliberately vendor-neutral so swapping or adding a provider is possible
+later without touching `domain/market` or `domain/analytics`.
 
 ### `AIProvider`
 

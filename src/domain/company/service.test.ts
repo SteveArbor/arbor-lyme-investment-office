@@ -61,6 +61,7 @@ const validInput = {
   sector: "Technology",
   industry: "Software",
   currency: "usd",
+  securityType: "equity" as const,
   status: "researching" as const,
   watchlist: false,
   notes: null,

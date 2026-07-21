@@ -1,9 +1,11 @@
 export { SupabaseAuditRepository } from "./audit-repository";
 export { SupabaseCompanyRepository } from "./company-repository";
 export { SupabaseDecisionRepository } from "./decision-repository";
+export { SupabaseFxRateRepository } from "./fx-rate-repository";
 export { SupabaseHoldingRepository } from "./holding-repository";
 export { SupabaseJournalRepository } from "./journal-repository";
 export { SupabasePortfolioRepository } from "./portfolio-repository";
+export { SupabaseQuoteRepository } from "./quote-repository";
 export { SupabaseResearchRepository } from "./research-repository";
 export { SupabaseSettingsRepository } from "./settings-repository";
 export { SupabaseThesisRepository } from "./thesis-repository";

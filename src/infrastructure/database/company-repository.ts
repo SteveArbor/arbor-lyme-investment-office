@@ -5,6 +5,7 @@ import type {
   CompanyListFilter,
   CompanyRepository,
   CompanyUpdate,
+  SecurityType,
 } from "@/domain/company";
 import type { Database } from "@/types/database";
 
@@ -21,6 +22,7 @@ function toDomain(row: CompanyRow): Company {
     sector: row.sector,
     industry: row.industry,
     currency: row.currency,
+    securityType: row.security_type as SecurityType,
     status: row.status,
     watchlist: row.watchlist,
     notes: row.notes,
@@ -38,6 +40,7 @@ function toRow(patch: CompanyUpdate): CompanyUpdateRow {
   if (patch.sector !== undefined) row.sector = patch.sector;
   if (patch.industry !== undefined) row.industry = patch.industry;
   if (patch.currency !== undefined) row.currency = patch.currency;
+  if (patch.securityType !== undefined) row.security_type = patch.securityType;
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.watchlist !== undefined) row.watchlist = patch.watchlist;
   if (patch.notes !== undefined) row.notes = patch.notes;
@@ -110,6 +113,7 @@ export class SupabaseCompanyRepository implements CompanyRepository {
         sector: input.sector,
         industry: input.industry,
         currency: input.currency,
+        security_type: input.securityType,
         status: input.status,
         watchlist: input.watchlist,
         notes: input.notes,

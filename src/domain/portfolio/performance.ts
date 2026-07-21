@@ -14,9 +14,32 @@
 export interface HoldingPerformanceInput {
   companyId: string;
   quantity: number;
+  /**
+   * The portfolio's base currency (ADR 0026/0032: cost basis is recorded
+   * in the ledger's own settlement currency at the historical FX rate
+   * that applied on the trade date — HL's own contract notes state the
+   * GBP execution price directly; this platform never re-derives or
+   * re-converts a historical cost basis using today's rate). Never
+   * multiplied by `fxRateToBase` — it is already in the base currency.
+   */
   averageCost: number;
-  /** Caller-supplied — this domain never invents or caches a price. */
+  /** Caller-supplied, in `currency` — this domain never invents, fetches, or caches a price. */
   currentPrice: number;
+  /** ISO 4217 — the currency `currentPrice`/`previousClose` are quoted in (the security's own listing currency, e.g. USD for a NASDAQ line; GBP for a fund or a GBP-listed equity). */
+  currency: string;
+  /**
+   * The already-resolved multiplier that converts an amount in `currency`
+   * into the base currency (ADR 0032: `1` when `currency` already equals
+   * the base currency — GBP→GBP identity — otherwise a real FX rate an
+   * application-layer composer looked up). This domain function never
+   * decides *which* rate applies or reads a currency's name to decide —
+   * it only ever multiplies by whatever it's given, which is exactly what
+   * keeps "never sum USD, EUR, and GBP directly" a property of the
+   * caller's input construction, not a branch buried in this arithmetic.
+   */
+  fxRateToBase: number;
+  /** Vendor-reported prior session close, in `currency` — absent for a manual mark or a provider that doesn't report it; never fabricated. */
+  previousClose?: number;
   targetAllocationPercent: number;
 }
 
@@ -24,7 +47,12 @@ export interface HoldingPerformance {
   companyId: string;
   quantity: number;
   averageCost: number;
+  /** The original, unconverted price in `currency` — preserved for display so a holding's own trading-currency price is never hidden behind its base-currency equivalent. */
   currentPrice: number;
+  currency: string;
+  fxRateToBase: number;
+  /** `currentPrice * fxRateToBase` — every money figure below this point is computed from this, never from `currentPrice` directly. */
+  currentPriceBase: number;
   costBasis: number;
   marketValue: number;
   unrealisedGain: number;
@@ -32,6 +60,10 @@ export interface HoldingPerformance {
   allocationPercent: number;
   targetAllocationPercent: number;
   allocationDifferencePercent: number;
+  /** `(currentPrice - previousClose) * quantity * fxRateToBase` — `null` when `previousClose` is absent, never a fabricated 0. */
+  dailyChangeAmountBase: number | null;
+  /** `(currentPrice - previousClose) / previousClose` — a currency-agnostic ratio, safe to compare across holdings priced in different currencies without conversion. */
+  dailyChangePercent: number | null;
 }
 
 /**
@@ -39,23 +71,39 @@ export interface HoldingPerformance {
  * cash) for the allocation-percent calculation. `allocationDifferencePercent`
  * is signed: positive means overweight vs. target, negative means
  * underweight — the sign is deliberate so a caller can render "+3.2%" /
- * "−1.5%" without extra logic.
+ * "−1.5%" without extra logic. All money figures (`marketValue`,
+ * `unrealisedGain`, `dailyChangeAmountBase`) are in the base currency —
+ * `currentPriceBase` is the one conversion point every other figure here
+ * derives from (ADR 0032).
  */
 export function calculateHoldingPerformance(
   holding: HoldingPerformanceInput,
   portfolioTotalValue: number
 ): HoldingPerformance {
+  const currentPriceBase = holding.currentPrice * holding.fxRateToBase;
   const costBasis = holding.quantity * holding.averageCost;
-  const marketValue = holding.quantity * holding.currentPrice;
+  const marketValue = holding.quantity * currentPriceBase;
   const unrealisedGain = marketValue - costBasis;
   const unrealisedGainPercent = costBasis > 0 ? unrealisedGain / costBasis : 0;
   const allocationPercent = portfolioTotalValue > 0 ? marketValue / portfolioTotalValue : 0;
+
+  const dailyChangeAmountBase =
+    holding.previousClose !== undefined
+      ? (holding.currentPrice - holding.previousClose) * holding.quantity * holding.fxRateToBase
+      : null;
+  const dailyChangePercent =
+    holding.previousClose !== undefined && holding.previousClose !== 0
+      ? (holding.currentPrice - holding.previousClose) / holding.previousClose
+      : null;
 
   return {
     companyId: holding.companyId,
     quantity: holding.quantity,
     averageCost: holding.averageCost,
     currentPrice: holding.currentPrice,
+    currency: holding.currency,
+    fxRateToBase: holding.fxRateToBase,
+    currentPriceBase,
     costBasis,
     marketValue,
     unrealisedGain,
@@ -63,6 +111,8 @@ export function calculateHoldingPerformance(
     allocationPercent,
     targetAllocationPercent: holding.targetAllocationPercent,
     allocationDifferencePercent: allocationPercent - holding.targetAllocationPercent,
+    dailyChangeAmountBase,
+    dailyChangePercent,
   };
 }
 
@@ -200,6 +250,18 @@ export interface PortfolioPerformance {
   largestPosition: HoldingPerformance | null;
   largestGain: HoldingPerformance | null;
   largestLoss: HoldingPerformance | null;
+  /**
+   * Sum of every holding's `dailyChangeAmountBase` that has one — `null`
+   * (never 0) when *no* holding in the portfolio has daily-change data at
+   * all (e.g. every holding is manually priced), so a caller can tell
+   * "flat today" apart from "unknown." Holdings without daily-change data
+   * are simply excluded from the sum, not treated as zero change.
+   */
+  dailyGain: number | null;
+  /** `dailyGain / (marketValue - dailyGain)` — relative to yesterday's implied market value, `null` under the same condition as `dailyGain`. */
+  dailyGainPercent: number | null;
+  largestDailyGainer: HoldingPerformance | null;
+  largestDailyLoser: HoldingPerformance | null;
   holdings: HoldingPerformance[];
 }
 
@@ -213,9 +275,20 @@ export interface PortfolioPerformance {
 export function calculatePortfolioPerformance(
   input: PortfolioPerformanceInput
 ): PortfolioPerformance {
-  const marketValue = input.holdings.reduce((sum, h) => sum + h.quantity * h.currentPrice, 0);
+  const marketValue = input.holdings.reduce(
+    (sum, h) => sum + h.quantity * h.currentPrice * h.fxRateToBase,
+    0
+  );
   const costBasis = input.holdings.reduce((sum, h) => sum + h.quantity * h.averageCost, 0);
   const totalValue = marketValue + input.cash;
+
+  const dailyChangeAmounts = input.holdings
+    .filter((h) => h.previousClose !== undefined)
+    .map((h) => (h.currentPrice - h.previousClose!) * h.quantity * h.fxRateToBase);
+  const dailyGain =
+    dailyChangeAmounts.length > 0 ? dailyChangeAmounts.reduce((sum, v) => sum + v, 0) : null;
+  const dailyGainPercent =
+    dailyGain !== null && marketValue - dailyGain !== 0 ? dailyGain / (marketValue - dailyGain) : null;
   const unrealisedGain = marketValue - costBasis;
   const unrealisedGainPercent = costBasis > 0 ? unrealisedGain / costBasis : 0;
 
@@ -248,6 +321,22 @@ export function calculatePortfolioPerformance(
   const averageHoldingCost =
     holdingPerformances.length > 0 ? costBasis / holdingPerformances.length : 0;
 
+  const holdingsWithDailyChange = holdingPerformances.filter(
+    (h) => h.dailyChangeAmountBase !== null
+  );
+  const largestDailyGainer = holdingsWithDailyChange.reduce<HoldingPerformance | null>(
+    (largest, h) =>
+      largest === null || h.dailyChangeAmountBase! > largest.dailyChangeAmountBase! ? h : largest,
+    null
+  );
+  const largestDailyLoser = holdingsWithDailyChange.reduce<HoldingPerformance | null>(
+    (smallest, h) =>
+      smallest === null || h.dailyChangeAmountBase! < smallest.dailyChangeAmountBase!
+        ? h
+        : smallest,
+    null
+  );
+
   return {
     marketValue,
     costBasis,
@@ -266,6 +355,10 @@ export function calculatePortfolioPerformance(
     largestPosition,
     largestGain,
     largestLoss,
+    dailyGain,
+    dailyGainPercent,
+    largestDailyGainer,
+    largestDailyLoser,
     holdings: holdingPerformances,
   };
 }

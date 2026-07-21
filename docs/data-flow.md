@@ -169,39 +169,55 @@ sequenceDiagram
 
 ---
 
-## 4. Refreshing Future Market Data **(future — Phase 3)**
+## 4. Refreshing Market Data **(manual refresh implemented — ADR 0030/0031/0032; scheduled job still future)**
 
 ```mermaid
 sequenceDiagram
-    participant CR as Scheduled Job (Vercel Cron) 🖥
-    participant MP as MarketDataProvider 🌐
-    participant N as Normalization layer 🖥
+    participant U as User (click "Refresh prices") 🖥
+    participant PE as PriceEngine (routes by SecurityType) 🌐
+    participant FX as FxRateProvider (ECB) 🌐
     participant DB as Postgres
-    participant EV as Event Bus
+    participant PF as Portfolio Performance (domain)
 
-    CR->>MP: getQuotes(watchedSymbols)
-    MP-->>N: raw vendor response 🌐
-    N->>N: map to domain Quote type, validate
-    N->>DB: upsert prices (with sourceTimestamp)
-    N-->>EV: PriceUpdated (outbox tier)
-    EV->>N: (async) alerts/rules evaluation triggered later
+    U->>PE: getPrice(identifier) per exchange-traded holding
+    PE-->>U: raw vendor response 🌐
+    U->>DB: upsert market_quotes (sourceTimestamp, quality, previousClose)
+    U->>FX: getRates(currency pairs the held securities actually need)
+    FX-->>U: raw ECB feed 🌐 (one call answers every pair)
+    U->>DB: upsert fx_rates (effectiveTimestamp, retrievedTimestamp, quality)
+    U->>PF: recalculate (join quotes + fx_rates + holdings, convert to base currency)
+    PF-->>U: updated Portfolio/Dashboard/Company views
 ```
 
 - **Trust boundary:** vendor response is untrusted external data until it passes
   through normalization/validation (Zod) — malformed or out-of-range values are
   rejected, not stored.
-- **External provider data:** every stored price retains `sourceTimestamp` and
-  provider identity, never silently presented as "live."
+- **External provider data:** every stored price and every stored FX rate
+  retains `sourceTimestamp`/`effectiveTimestamp` and provider identity, never
+  silently presented as "live."
 - **Failure handling:** a provider error (`ProviderRateLimitError`,
-  `ProviderUnavailableError` — `provider-architecture.md`) leaves prior prices in
-  place with their existing (now more stale) `sourceTimestamp`; the UI/rules layer
-  is expected to treat staleness explicitly (see the "Market data is stale" rule,
-  `rules-engine.md`), not fail silently.
+  `ProviderUnavailableError` — `provider-architecture.md`) leaves the prior
+  price *or* FX rate in place with its existing (now more stale) timestamp,
+  independently per security/currency pair — one failure never blocks the
+  rest of a refresh (ADR 0031/0032). Staleness is computed at render time
+  from that timestamp (`calculateQuoteAge`/`calculateFxRateAge`), never a
+  stored boolean.
+- **Currency conversion:** a price is never converted by the provider or the
+  repository — `domain/portfolio/performance.ts` is the one place a
+  holding's own-currency price is multiplied by an already-resolved FX rate
+  into the portfolio's base currency (ADR 0032). A holding whose currency
+  has no available FX rate is shown at cost, never at an unconverted or
+  guessed price.
 - **Retry boundary:** safe to retry the whole refresh; retries should back off on
   rate-limit errors specifically.
-- **Idempotency:** an upsert keyed by `(symbol, provider)` makes repeated refreshes
-  naturally idempotent — re-fetching the same quote just overwrites with the same
-  or newer data.
+- **Idempotency:** an upsert keyed by `(owner, identifier)` for quotes and
+  `(owner, base, quote)` for FX rates makes repeated refreshes naturally
+  idempotent — re-fetching the same quote or rate just overwrites with the
+  same or newer data.
+- **Still future:** an overnight scheduled job (Vercel Cron) calling the same
+  `PriceEngine`/`FxRateProvider`/refresh orchestration on a timer instead of
+  a user click — the sequence above is unchanged either way (ADR 0030's
+  "both triggers do the same thing" design).
 
 ---
 

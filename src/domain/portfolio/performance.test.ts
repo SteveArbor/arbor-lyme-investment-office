@@ -14,6 +14,8 @@ describe("calculateHoldingPerformance", () => {
         quantity: 100,
         averageCost: 20,
         currentPrice: 25,
+        currency: "GBP",
+        fxRateToBase: 1,
         targetAllocationPercent: 0.1,
       },
       10_000
@@ -34,6 +36,8 @@ describe("calculateHoldingPerformance", () => {
         quantity: 50,
         averageCost: 100,
         currentPrice: 80,
+        currency: "GBP",
+        fxRateToBase: 1,
         targetAllocationPercent: 0.2,
       },
       10_000
@@ -47,13 +51,217 @@ describe("calculateHoldingPerformance", () => {
 
   it("treats zero cost basis and zero portfolio value as zero percentages, not NaN/Infinity", () => {
     const result = calculateHoldingPerformance(
-      { companyId: "c1", quantity: 0, averageCost: 0, currentPrice: 10, targetAllocationPercent: 0 },
+      {
+        companyId: "c1",
+        quantity: 0,
+        averageCost: 0,
+        currentPrice: 10,
+        currency: "GBP",
+        fxRateToBase: 1,
+        targetAllocationPercent: 0,
+      },
       0
     );
     expect(result.unrealisedGainPercent).toBe(0);
     expect(result.allocationPercent).toBe(0);
     expect(Number.isFinite(result.unrealisedGainPercent)).toBe(true);
     expect(Number.isFinite(result.allocationPercent)).toBe(true);
+  });
+});
+
+describe("calculateHoldingPerformance — currency conversion (ADR 0032)", () => {
+  it("converts a USD holding's market value into the base currency using fxRateToBase", () => {
+    const result = calculateHoldingPerformance(
+      {
+        companyId: "nvda",
+        quantity: 64,
+        averageCost: 152.89, // GBP, historical cost basis
+        currentPrice: 203.28, // USD
+        currency: "USD",
+        fxRateToBase: 0.74, // 1 USD = 0.74 GBP
+        targetAllocationPercent: 0.1,
+      },
+      100_000
+    );
+
+    expect(result.currentPriceBase).toBeCloseTo(203.28 * 0.74, 6);
+    expect(result.marketValue).toBeCloseTo(64 * 203.28 * 0.74, 6);
+    expect(result.costBasis).toBe(64 * 152.89);
+    // Never the "sum USD and GBP directly" bug: marketValue must not equal quantity * currentPrice unconverted.
+    expect(result.marketValue).not.toBeCloseTo(64 * 203.28, 2);
+  });
+
+  it("applies identity conversion for a GBP holding regardless of the fxRateToBase value passed", () => {
+    const result = calculateHoldingPerformance(
+      {
+        companyId: "wpp",
+        quantity: 1331,
+        averageCost: 3.92,
+        currentPrice: 4.0,
+        currency: "GBP",
+        fxRateToBase: 1,
+        targetAllocationPercent: 0.05,
+      },
+      100_000
+    );
+
+    expect(result.currentPriceBase).toBe(4.0);
+    expect(result.marketValue).toBeCloseTo(1331 * 4.0, 6);
+  });
+
+  it("computes daily change amount and percent from previousClose, converted to base currency", () => {
+    const result = calculateHoldingPerformance(
+      {
+        companyId: "nvda",
+        quantity: 64,
+        averageCost: 152.89,
+        currentPrice: 210,
+        currency: "USD",
+        fxRateToBase: 0.75,
+        previousClose: 200,
+        targetAllocationPercent: 0.1,
+      },
+      100_000
+    );
+
+    // (210 - 200) * 64 * 0.75 = 480
+    expect(result.dailyChangeAmountBase).toBeCloseTo(480, 6);
+    expect(result.dailyChangePercent).toBeCloseTo(10 / 200, 6);
+  });
+
+  it("returns null daily change fields when previousClose is absent, never a fabricated zero", () => {
+    const result = calculateHoldingPerformance(
+      {
+        companyId: "fund",
+        quantity: 100,
+        averageCost: 10,
+        currentPrice: 10.5,
+        currency: "GBP",
+        fxRateToBase: 1,
+        targetAllocationPercent: 0.1,
+      },
+      100_000
+    );
+
+    expect(result.dailyChangeAmountBase).toBeNull();
+    expect(result.dailyChangePercent).toBeNull();
+  });
+});
+
+describe("calculatePortfolioPerformance — mixed-currency aggregation (ADR 0032)", () => {
+  it("never sums USD, EUR, and GBP amounts directly — every holding is converted to base currency before aggregation", () => {
+    const result = calculatePortfolioPerformance({
+      cash: 0,
+      holdings: [
+        {
+          companyId: "usd-holding",
+          quantity: 10,
+          averageCost: 100, // GBP cost basis
+          currentPrice: 100, // USD
+          currency: "USD",
+          fxRateToBase: 0.75, // 1 USD = 0.75 GBP -> market value 750 GBP
+          targetAllocationPercent: 0.5,
+        },
+        {
+          companyId: "eur-holding",
+          quantity: 10,
+          averageCost: 100, // GBP cost basis
+          currentPrice: 100, // EUR
+          currency: "EUR",
+          fxRateToBase: 0.85, // 1 EUR = 0.85 GBP -> market value 850 GBP
+          targetAllocationPercent: 0.5,
+        },
+      ],
+      realisedGainTotal: 0,
+      dividendsReceived: 0,
+      feesPaid: 0,
+      taxesPaid: 0,
+      netContributions: 1,
+      cashFlows: [],
+    });
+
+    // Correct: 10*100*0.75 + 10*100*0.85 = 750 + 850 = 1600
+    expect(result.marketValue).toBeCloseTo(1_600, 6);
+    // Wrong (the bug this ADR fixes): naively summing raw prices would give 10*100 + 10*100 = 2000
+    expect(result.marketValue).not.toBeCloseTo(2_000, 2);
+    expect(result.costBasis).toBe(2_000); // GBP cost basis, unconverted
+  });
+
+  it("aggregates daily gain across mixed-currency holdings and identifies the largest daily gainer/loser", () => {
+    const result = calculatePortfolioPerformance({
+      cash: 0,
+      holdings: [
+        {
+          companyId: "usd-gainer",
+          quantity: 10,
+          averageCost: 100,
+          currentPrice: 110,
+          currency: "USD",
+          fxRateToBase: 0.75,
+          previousClose: 100,
+          targetAllocationPercent: 0.5,
+        },
+        {
+          companyId: "eur-loser",
+          quantity: 10,
+          averageCost: 100,
+          currentPrice: 90,
+          currency: "EUR",
+          fxRateToBase: 0.85,
+          previousClose: 100,
+          targetAllocationPercent: 0.5,
+        },
+        {
+          companyId: "manual-fund",
+          quantity: 10,
+          averageCost: 100,
+          currentPrice: 100,
+          currency: "GBP",
+          fxRateToBase: 1,
+          // no previousClose -- manually priced, must be excluded from daily gain, not treated as flat
+          targetAllocationPercent: 0,
+        },
+      ],
+      realisedGainTotal: 0,
+      dividendsReceived: 0,
+      feesPaid: 0,
+      taxesPaid: 0,
+      netContributions: 1,
+      cashFlows: [],
+    });
+
+    // usd-gainer: (110-100)*10*0.75 = 75. eur-loser: (90-100)*10*0.85 = -85. Sum = -10.
+    expect(result.dailyGain).toBeCloseTo(-10, 6);
+    expect(result.largestDailyGainer?.companyId).toBe("usd-gainer");
+    expect(result.largestDailyLoser?.companyId).toBe("eur-loser");
+  });
+
+  it("returns null dailyGain/dailyGainPercent when no holding has daily-change data", () => {
+    const result = calculatePortfolioPerformance({
+      cash: 0,
+      holdings: [
+        {
+          companyId: "fund",
+          quantity: 10,
+          averageCost: 100,
+          currentPrice: 100,
+          currency: "GBP",
+          fxRateToBase: 1,
+          targetAllocationPercent: 1,
+        },
+      ],
+      realisedGainTotal: 0,
+      dividendsReceived: 0,
+      feesPaid: 0,
+      taxesPaid: 0,
+      netContributions: 1,
+      cashFlows: [],
+    });
+
+    expect(result.dailyGain).toBeNull();
+    expect(result.dailyGainPercent).toBeNull();
+    expect(result.largestDailyGainer).toBeNull();
+    expect(result.largestDailyLoser).toBeNull();
   });
 });
 
@@ -119,6 +327,8 @@ describe("calculatePortfolioPerformance", () => {
           quantity: 100,
           averageCost: 20,
           currentPrice: 25,
+          currency: "GBP",
+          fxRateToBase: 1,
           targetAllocationPercent: 0.3,
         },
         {
@@ -126,6 +336,8 @@ describe("calculatePortfolioPerformance", () => {
           quantity: 50,
           averageCost: 40,
           currentPrice: 35,
+          currency: "GBP",
+          fxRateToBase: 1,
           targetAllocationPercent: 0.2,
         },
       ],
@@ -166,6 +378,8 @@ describe("calculatePortfolioPerformance", () => {
           quantity: 1000,
           averageCost: 10,
           currentPrice: 10.5,
+          currency: "GBP",
+          fxRateToBase: 1,
           targetAllocationPercent: 0.5,
         },
         {
@@ -173,6 +387,8 @@ describe("calculatePortfolioPerformance", () => {
           quantity: 10,
           averageCost: 5,
           currentPrice: 100, // gain = 10 * (100-5) = 950, more than "big"'s 1000 * 0.5 = 500
+          currency: "GBP",
+          fxRateToBase: 1,
           targetAllocationPercent: 0.1,
         },
         {
@@ -180,6 +396,8 @@ describe("calculatePortfolioPerformance", () => {
           quantity: 100,
           averageCost: 20,
           currentPrice: 5,
+          currency: "GBP",
+          fxRateToBase: 1,
           targetAllocationPercent: 0.1,
         },
       ],

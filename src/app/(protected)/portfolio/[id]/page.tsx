@@ -2,12 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { buildPortfolioPerformanceData, composeAppServices } from "@/application/services";
+import {
+  buildPortfolioPerformanceData,
+  buildPortfolioValuation,
+  type CompanyLookup,
+  composeAppServices,
+} from "@/application/services";
 import { primaryButtonClasses } from "@/components/ui/form-styles";
 import { NotFoundError } from "@/domain/shared";
 import { createSupabaseServerClient } from "@/infrastructure/auth";
 
-import { type PerformanceHoldingRow, PortfolioPerformancePanel } from "./portfolio-performance-panel";
+import { PortfolioPerformancePanel } from "./portfolio-performance-panel";
 
 export const metadata: Metadata = {
   title: "Portfolio — Arbor Lyme Capital",
@@ -20,8 +25,15 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { portfolioService, tradingService, companyService, decisionService, settingsService } =
-    composeAppServices(supabase);
+  const {
+    portfolioService,
+    tradingService,
+    companyService,
+    decisionService,
+    settingsService,
+    quoteRepository,
+    fxRateRepository,
+  } = composeAppServices(supabase);
 
   let portfolio;
   let companies;
@@ -42,21 +54,55 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
     if (error instanceof NotFoundError) notFound();
     throw error;
   }
-  const companyById = new Map(companies.map((company) => [company.id, company]));
 
-  const holdingRows: PerformanceHoldingRow[] = performanceData.holdings.map((holding) => {
-    const company = companyById.get(holding.companyId);
-    return {
-      companyId: holding.companyId,
-      companyName: company?.name ?? holding.companyId,
-      ticker: company?.ticker ?? "—",
-      quantity: holding.quantity,
-      averageCost: holding.averageCost,
-      targetAllocationPercent: holding.targetAllocationPercent,
-      investmentRating: holding.investmentRating,
-      lastUpdated: holding.lastUpdated,
-    };
-  });
+  const baseCurrency = settings.baseCurrency;
+  const companyById = new Map(companies.map((company) => [company.id, company]));
+  const companyLookupById = new Map<string, CompanyLookup>(
+    companies.map((company) => [
+      company.id,
+      {
+        ticker: company.ticker,
+        exchange: company.exchange,
+        currency: company.currency,
+        securityType: company.securityType,
+        name: company.name,
+      },
+    ])
+  );
+
+  // Every exchange-traded (non-fund) holding's persisted quote (ADR
+  // 0030/0031) — funds are never looked up here, matching
+  // buildPortfolioValuation's own "no quote lookup for funds" rule.
+  const exchangeTradedIdentifiers = performanceData.holdings
+    .map((holding) => companyById.get(holding.companyId))
+    .filter((company): company is NonNullable<typeof company> => company !== undefined)
+    .filter((company) => company.securityType !== "fund")
+    .map((company) => ({
+      type: company.securityType,
+      ticker: company.ticker,
+      exchange: company.exchange,
+      currency: company.currency,
+    }));
+  const quotes = await quoteRepository.getLatestForMany(user!.id, exchangeTradedIdentifiers);
+
+  // FX conversion (ADR 0032): only the currencies this portfolio's
+  // holdings actually trade in, other than the base currency itself —
+  // GBP→GBP is identity and never needs a stored rate.
+  const heldCurrencies = new Set(companies.map((company) => company.currency));
+  const fxPairs = [...heldCurrencies]
+    .filter((currency) => currency !== baseCurrency)
+    .map((currency) => ({ base: currency, quote: baseCurrency }));
+  const fxRates = await fxRateRepository.getLatestForMany(user!.id, fxPairs);
+
+  const now = new Date().toISOString();
+  const valuation = buildPortfolioValuation(
+    performanceData,
+    companyLookupById,
+    quotes,
+    fxRates,
+    baseCurrency,
+    now
+  );
 
   return (
     <main id="main-content" className="mx-auto max-w-6xl px-4 py-8">
@@ -75,18 +121,7 @@ export default async function PortfolioDetailPage({ params }: { params: Promise<
       </div>
 
       <div className="mt-6">
-        <PortfolioPerformancePanel
-          portfolioId={id}
-          currency={settings.baseCurrency}
-          cash={performanceData.cash}
-          holdingRows={holdingRows}
-          realisedGainTotal={performanceData.realisedGainTotal}
-          dividendsReceived={performanceData.dividendsReceived}
-          feesPaid={performanceData.feesPaid}
-          taxesPaid={performanceData.taxesPaid}
-          netContributions={performanceData.netContributions}
-          cashFlows={performanceData.cashFlows}
-        />
+        <PortfolioPerformancePanel portfolioId={id} baseCurrency={baseCurrency} valuation={valuation} />
       </div>
     </main>
   );

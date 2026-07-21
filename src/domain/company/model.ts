@@ -19,6 +19,20 @@ export const COMPANY_STATUS_OPTIONS = [
 
 export type CompanyStatus = (typeof COMPANY_STATUS_OPTIONS)[number];
 
+/**
+ * The same four-value vocabulary `domain/market`'s `SecurityType` uses
+ * (ADR 0031) — defined again here, not imported, because `company` is the
+ * anchor entity every other domain references (`docs/domain-driven-design.md`)
+ * and must not gain a dependency on `market`, a newer, more peripheral
+ * domain that itself needs `ticker`/`exchange`/`currency` FROM a company to
+ * build a `SecurityIdentifier`. Keeping the values identical is a
+ * documented convention, not a type-level guarantee — if the two ever
+ * needed to diverge, that would itself be a sign this field belongs
+ * somewhere else.
+ */
+export const SECURITY_TYPE_OPTIONS = ["equity", "etf", "investment_trust", "fund"] as const;
+export type SecurityType = (typeof SECURITY_TYPE_OPTIONS)[number];
+
 // Free-text rather than a closed enum for sector/industry/exchange:
 // GICS-style classifications run to hundreds of values and change over
 // time; a closed enum here would need constant maintenance for no real
@@ -46,6 +60,9 @@ export const companySchema = z.object({
   watchlist: z.boolean(),
   notes: z.string().max(10_000).nullable(),
   profile: z.string().max(5_000).nullable(), // free-text company profile/description
+  // Defaults to "equity" (the FOUNDATION_COMPANY_DEFAULTS value below) since
+  // that's what every company created before this field existed already is.
+  securityType: z.enum(SECURITY_TYPE_OPTIONS),
 });
 
 export type CompanyInput = z.infer<typeof companySchema>;
@@ -60,7 +77,11 @@ export interface Company extends CompanyInput {
 export const companyUpdateSchema = companySchema.partial();
 export type CompanyUpdate = z.infer<typeof companyUpdateSchema>;
 
-export const FOUNDATION_COMPANY_DEFAULTS: Pick<CompanyInput, "status" | "watchlist"> = {
+export const FOUNDATION_COMPANY_DEFAULTS: Pick<
+  CompanyInput,
+  "status" | "watchlist" | "securityType"
+> = {
   status: "researching",
   watchlist: false,
+  securityType: "equity",
 };

@@ -1,4 +1,4 @@
-import type { PriceQuote, SecurityIdentifier } from "./model";
+import type { FxRate, PriceQuote, SecurityIdentifier } from "./model";
 
 /**
  * Persistence for the "last known good" price of each security
@@ -19,4 +19,20 @@ export interface QuoteRepository {
   getLatest(ownerId: string, identifier: SecurityIdentifier): Promise<PriceQuote | null>;
   getLatestForMany(ownerId: string, identifiers: SecurityIdentifier[]): Promise<PriceQuote[]>;
   upsert(ownerId: string, quote: PriceQuote): Promise<void>;
+}
+
+/**
+ * Persistence for the "last known good" FX rate of each currency pair
+ * (ADR 0032) — the same "last known good, never deleted on failure"
+ * design as `QuoteRepository`, for the same reason: a failed refresh must
+ * leave the prior valid rate in place (`quality: "stale_fallback"`) rather
+ * than losing it, so a caller always has *some* rate to convert with.
+ */
+export interface FxRateRepository {
+  getLatest(ownerId: string, base: string, quote: string): Promise<FxRate | null>;
+  getLatestForMany(
+    ownerId: string,
+    pairs: ReadonlyArray<{ base: string; quote: string }>
+  ): Promise<FxRate[]>;
+  upsert(ownerId: string, rate: FxRate): Promise<void>;
 }

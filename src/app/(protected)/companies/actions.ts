@@ -35,6 +35,7 @@ export async function createCompanyAction(
     sector: formData.get("sector"),
     industry: formData.get("industry"),
     currency: formData.get("currency"),
+    securityType: formData.get("securityType"),
     status: formData.get("status"),
     watchlist: formData.get("watchlist") === "on",
     notes: formData.get("notes") || null,

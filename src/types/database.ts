@@ -110,6 +110,7 @@ export interface Database {
           sector: string;
           industry: string;
           currency: string;
+          security_type: "equity" | "etf" | "investment_trust" | "fund";
           status: "researching" | "monitoring" | "holding" | "passed" | "archived";
           watchlist: boolean;
           notes: string | null;
@@ -125,6 +126,7 @@ export interface Database {
           sector: string;
           industry: string;
           currency: string;
+          security_type?: "equity" | "etf" | "investment_trust" | "fund";
           status?: "researching" | "monitoring" | "holding" | "passed" | "archived";
           watchlist?: boolean;
           notes?: string | null;
@@ -137,6 +139,7 @@ export interface Database {
           sector?: string;
           industry?: string;
           currency?: string;
+          security_type?: "equity" | "etf" | "investment_trust" | "fund";
           status?: "researching" | "monitoring" | "holding" | "passed" | "archived";
           watchlist?: boolean;
           notes?: string | null;
@@ -410,6 +413,83 @@ export interface Database {
           sale_date?: string | null;
           sale_reason?: string | null;
           lessons_learned?: string | null;
+        };
+        Relationships: [];
+      };
+      market_quotes: {
+        Row: {
+          id: string;
+          owner_id: string;
+          security_type: "equity" | "etf" | "investment_trust" | "fund";
+          ticker: string | null;
+          exchange: string | null;
+          sedol: string | null;
+          isin: string | null;
+          identifier_key: string;
+          price: string;
+          currency: string;
+          quality: "real_time" | "delayed" | "previous_close" | "manual";
+          source_timestamp: string;
+          previous_close: string | null;
+          provider: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          owner_id: string;
+          security_type: "equity" | "etf" | "investment_trust" | "fund";
+          ticker?: string | null;
+          exchange?: string | null;
+          sedol?: string | null;
+          isin?: string | null;
+          identifier_key: string;
+          price: number;
+          currency: string;
+          quality: "real_time" | "delayed" | "previous_close" | "manual";
+          source_timestamp: string;
+          previous_close?: number | null;
+          provider: string;
+        };
+        Update: {
+          price?: number;
+          currency?: string;
+          quality?: "real_time" | "delayed" | "previous_close" | "manual";
+          source_timestamp?: string;
+          previous_close?: number | null;
+          provider?: string;
+        };
+        Relationships: [];
+      };
+      fx_rates: {
+        Row: {
+          id: string;
+          owner_id: string;
+          base_currency: string;
+          quote_currency: string;
+          rate: string;
+          provider: string;
+          effective_timestamp: string;
+          retrieved_timestamp: string;
+          quality: "reference" | "stale_fallback";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          owner_id: string;
+          base_currency: string;
+          quote_currency: string;
+          rate: number;
+          provider: string;
+          effective_timestamp: string;
+          retrieved_timestamp: string;
+          quality: "reference" | "stale_fallback";
+        };
+        Update: {
+          rate?: number;
+          provider?: string;
+          effective_timestamp?: string;
+          retrieved_timestamp?: string;
+          quality?: "reference" | "stale_fallback";
         };
         Relationships: [];
       };

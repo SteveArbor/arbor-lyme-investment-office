@@ -5,13 +5,27 @@
 **Last Updated:** 2026-07-21
 **Current Version:** 0.1.0
 **Current Branch:** `foundation`
-**Current Milestone:** Milestone 2.7 — Portfolio Completion & User
-Experience Polish (complete)
-**Overall Status:** Healthy. The Portfolio module — cash management,
-holdings, transactions, and performance — is production ready and
-live-verified end to end, including a real bug (an undeployed migration)
-caught and fixed during that verification. Paused at a deliberate decision
-boundary awaiting approval to begin Phase 3.
+**Current Milestone:** Phase 3.2 — FX Conversion and Live Quote Propagation
+(ADR 0032, implementation complete and **live-validated**, not yet
+committed)
+**Overall Status:** Healthy. The FX-conversion gap Price Engine Stage 1's
+live validation surfaced (a refreshed USD/EUR quote being summed into
+portfolio totals as if it were GBP) is now closed: a real `FxRateProvider`
+(the European Central Bank's free daily reference-rate feed) is
+implemented, and currency conversion is built into the domain calculation
+layer (`domain/portfolio/performance.ts`) as a single, structural choke
+point rather than policed by convention. Persisted quotes and FX rates now
+propagate consistently across the Dashboard, Portfolio, and Company
+pages — none of them ever call a vendor directly during ordinary
+rendering; every vendor call happens exclusively inside the explicit
+"Refresh prices" action. Manual price entry (for funds, and for ASML/WPP
+while Twelve Data's free tier doesn't cover their exchanges) is now
+genuinely persisted with a real effective date/age, not ephemeral typing.
+Live-validated against the real HL Stocks & Shares ISA: NVIDIA/Broadcom/
+AMD/TSMC/e.l.f. Beauty all convert USD→GBP correctly at a single
+consistent rate; ASML/WPP remain correctly, clearly manually priced.
+Paused at a deliberate decision boundary: commit approval for this
+milestone.
 
 ---
 
@@ -92,7 +106,7 @@ dividends, and — at the time — no fee/tax tracking and no corporate-action
 support (both later revisited; see Milestone 2.7 and ADR 0028 below).
 
 **Milestone 2.7 — Portfolio Completion & User Experience Polish**
-Commit pending, 2026-07-20. Two-part milestone completing the Portfolio
+Commit `445a547`, 2026-07-20. Two-part milestone completing the Portfolio
 module and substantially improving the application's usability, built on
 the existing architecture with no new bounded contexts.
 
@@ -139,6 +153,198 @@ new Audit history view and fixed alongside it. A pre-existing unsanitized
 search-string interpolation in `company-repository.ts` (previously
 dormant, no search UI called it) was fixed rather than left dormant now
 that a Companies search UI exists.
+
+**HL Stocks & Shares ISA Import**
+Commit `c11b665`, 2026-07-21. Real portfolio data import, run via
+authenticated throwaway scripts calling the same atomic RPCs the UI uses
+(never a direct table write), reconciled exactly to source figures with
+zero discrepancy. A new "HL Stocks & Shares ISA" portfolio (kept fully
+separate from the existing Core Growth Portfolio demo data, per explicit
+instruction) received: ten fund/OEIC holdings plus WPP as an opening
+position and opening cash balance dated 20 July 2026; then six individual
+buy transactions (NVIDIA, Broadcom, AMD, Taiwan Semiconductor ADR, ASML
+Euronext Amsterdam ordinary shares, e.l.f. Beauty) sourced from a real
+contract-note-style export, each with its own dealing fee/FX/tax recorded
+explicitly and cash deducted at the exact net settlement figure. A new
+`ASML.AS` company (Euronext, EUR) was created distinct from the
+pre-existing NASDAQ/USD `ASML` demo company to preserve venue and currency
+distinctions. The Dashboard/Portfolio UI gained a portfolio selector so the
+two portfolios can be switched between; consolidated cross-portfolio
+reporting is deferred to a future milestone. No historical transactions
+were fabricated to reconcile Core Growth Portfolio's pre-existing demo
+data — it was left untouched, exactly as instructed.
+
+**ADR 0029 — Portfolio Rounding Policy**
+Commit `c11b665`, 2026-07-21. Documentation-only ADR: round exactly once,
+at the database column boundary or `src/lib/format.ts`'s formatters, never
+in `domain/*`/`application/services/*`. Written after the HL import
+surfaced an expected 1p gap between the platform's sum-then-round total and
+the source spreadsheet's sum-of-already-rounded total. Identified (but,
+per the ADR's own scope, did not fix) five UI files still calling raw
+`.toFixed()` — see Technical Debt.
+
+**Market Data Provider Evaluation**
+Documentation-only, 2026-07-21 (folded into the ADR 0030 commit). Compared
+Twelve Data, Financial Modeling Prep, and others against coverage,
+reliability, cost, API limits, UK/US/EU support, mutual-fund support, and
+future scalability. Recommended Twelve Data over the user's initial
+instinct (FMP), with the key finding that no mainstream, affordably-priced
+vendor covers UK OEIC/unit trust fund NAVs by SEDOL — that gap directly
+shaped the Price Engine's staged design below.
+
+**ADR 0030 — Price Engine Architecture**
+Commit `aeb49a7`, 2026-07-21. Provider-neutral, security-type-routed
+pricing architecture (interfaces only at this commit):
+`PriceEngine`/`SecurityPriceProvider`/`FxRateProvider`/`QuoteRepository` in
+`src/domain/market/`, refining (not reversing) ADR 0006's flat
+`MarketDataProvider`. Staged: Stage 1 (exchange-traded securities, Twelve
+Data) and Stage 2 (UK funds, backed by the existing manual-marking
+workflow rather than a real vendor, since none is realistically priced).
+
+**Price Engine Stage 1 Implementation**
+Commit pending, 2026-07-21. Concrete implementation of ADR 0030's Stage 1,
+documented in new **ADR 0031**: `TwelveDataPriceProvider` and
+`TwelveDataMarketStatusProvider` (`src/infrastructure/market-data/`), a
+shared Twelve Data HTTP client normalizing rate-limit/auth/unavailable
+failures into domain errors, `RoutingPriceEngine`, a Postgres-backed
+`QuoteRepository` (new `market_quotes` table, RLS, owner-scoped), a new
+`companies.security_type` column (equity/etf/investment_trust/fund,
+backfilled for the nine known fund holdings), price-quality metadata
+(`real_time`/`delayed`/`previous_close`, inferred from market-open state —
+Twelve Data doesn't expose the distinction per call), a pure
+`calculateQuoteAge` function (age computed at render time from a persisted
+timestamp, never frozen at fetch time), and a manual "Refresh prices"
+button on the Portfolio Performance panel wired through a new Server
+Action. Funds are explicitly excluded from this refresh path (Stage 2
+scope). Scheduled/overnight refresh was explicitly not built this pass —
+deferred to the next milestone per the instruction this work was scoped
+under.
+
+**Live validation (2026-07-21), against the real Twelve Data API and the
+real Supabase project:** migration `20260721000001_add_security_type_and_market_quotes.sql`
+pushed successfully (confirmed via `supabase migration list`, 18/18
+applied). Manual refresh exercised against all six Stage 1 holdings in the
+HL Stocks & Shares ISA plus WPP. Found and fixed three real defects:
+
+1. **`getServerEnv()` never read `process.env`** — it parsed a hardcoded
+   `{}`, so `TWELVE_DATA_API_KEY` was always `undefined` regardless of what
+   `.env.local` held (every other var in this file follows the correct
+   `env.public.ts` pattern; this one was written without ever being
+   wired up). Every refresh failed identically with "Twelve Data rejected
+   the configured credentials" until this was found and fixed.
+2. **Twelve Data's error client discarded the vendor's real error message
+   for any non-2xx HTTP status.** Twelve Data mixes two failure
+   conventions — HTTP 200 with `{status:"error"}` in the body (the
+   documented case) and, for plan-tier restrictions, a genuine non-2xx
+   status *with the same informative body attached* — but the client only
+   parsed the body on the 200 path, surfacing a bare "HTTP 404" instead of
+   the vendor's actual "this symbol needs the Grow/Venture plan" message.
+   Fixed by reading the body first regardless of status, before falling
+   back to a bare status code.
+3. **ASML's stored ticker/exchange (`ASML.AS` / "Euronext Amsterdam") — a
+   deliberate suffix this schema's own `companies_owner_ticker_unique`
+   constraint required, since the pre-existing Core Growth demo `ASML`
+   already owns the bare "ASML" ticker for this owner — didn't match
+   Twelve Data's own vocabulary** (bare `ASML` symbol + `exchange=Euronext`,
+   confirmed via Twelve Data's `/symbol_search`). Fixed with a small,
+   documented vendor-specific translation inside `TwelveDataPriceProvider`
+   (strips the disambiguating suffix and aliases the exchange name only
+   for the outbound Twelve Data request); the stored company record and
+   every other layer of the platform are untouched.
+
+**Result after fixes:** NVIDIA, Broadcom, AMD, Taiwan Semiconductor, and
+e.l.f. Beauty all refreshed successfully — correct symbol, correct
+exchange, live price, `previous_close` quality (US markets were closed at
+test time), fresh quote timestamp, "just now" age, and a persisted
+`market_quotes` row confirmed via direct query (native currency correctly
+stored as USD throughout — the persistence layer never corrupted this).
+ASML and WPP both correctly resolve to Twelve Data's real, informative
+403-equivalent response: their listings require Twelve Data's paid
+Grow/Venture plan, not a code defect. One refresh's application-code
+latency was ~1.9s for 7 securities in parallel.
+
+**Significant limitation found, not fixed this pass:** the Portfolio
+Performance panel has never handled multi-currency holdings — it treats
+every holding's price as being in the portfolio's base currency (GBP) with
+no conversion step. This was latent but harmless while prices were
+manually typed (a user naturally typed a GBP-equivalent figure); a live
+USD quote from Twelve Data now flows into that same unconverted slot,
+so the portfolio's headline "Market value"/"Unrealised gain"/"Total
+portfolio value" are currently **numerically wrong** (inflated) for every
+refreshed US-listed holding, e.g. NVIDIA's real $203.28 close is being
+summed as if it were £203.28. ADR 0030 already designed the fix (a
+separate, explicit `FxRateProvider` + conversion step) but it was
+deliberately deferred, not built. This is the clear top priority for the
+next milestone, and the feature should not be relied on for actual
+portfolio monitoring involving non-GBP holdings until it's addressed. See
+ADR 0031 (updated) and Technical Debt below.
+
+221/221 unit tests passing before live validation; 231/231 after the three
+fixes above (10 more new tests covering the client's error-mapping and the
+Twelve Data symbol-translation logic). Lint/typecheck/build all clean
+throughout.
+
+**Phase 3.2 — FX Conversion and Live Quote Propagation**
+Commit pending, 2026-07-21. Closes the currency-conversion gap this
+milestone's own live validation found (above), and propagates persisted
+quotes consistently across the whole application rather than one panel.
+
+_Part 1 — FX Conversion (ADR 0032):_ `EcbFxRateProvider`
+(`infrastructure/market-data/`) — the European Central Bank's free daily
+reference-rate feed, chosen over Twelve Data's own paid-tier-gated FX
+endpoints and over Bank of England data (documented provider evaluation)
+because a once-daily official reference rate is the right shape of data
+for a decision-support platform, not a trading system. One HTTP call
+answers every currency pair needed; USD→GBP is computed as a cross-rate
+through EUR. New `fx_rates` table (`SupabaseFxRateRepository`,
+owner-scoped, "last known good," never deleted on a failed refresh, same
+pattern as `market_quotes`). `domain/portfolio/performance.ts` extended
+so every holding carries its own `currency`/`fxRateToBase`/
+`currentPriceBase`, converting exactly once per holding before any
+aggregation — GBP→GBP is a true identity conversion, and a holding whose
+FX rate is genuinely unavailable is shown at cost (never at an
+unconverted or guessed price) rather than risk summing two different
+currencies. Cost basis confirmed (against the real HL ledger, not
+assumed) to already be stored in GBP at each trade's historical rate — no
+historical transaction was altered. Daily gain/percentage added at both
+holding and portfolio level, sourced from Twelve Data's own
+`previous_close` field (no new historical-price storage built).
+
+_Part 2 — Live Quote Propagation:_ a new shared composer,
+`application/services/portfolio-valuation.ts`, joins ledger data +
+persisted quotes + persisted FX rates into one converted, render-ready
+view — used identically by the Portfolio Performance panel, the
+Dashboard, and (for a single company) the Company overview page, so none
+of them can ever disagree about how a holding was converted. **No page
+calls Twelve Data or ECB directly during ordinary rendering** — every
+vendor call happens exclusively inside the "Refresh prices" action
+(`refreshMarketDataAction`, which now refreshes quotes *and* FX rates
+together, with the same per-item resilience as before: one failure never
+blocks the rest, and a failed refresh never erases a valid prior value).
+Manual price entry (funds, plus ASML/WPP while ungated Twelve Data
+coverage doesn't exist) is now genuinely persisted — a new `manual`
+`PriceQuality` value and `saveManualPrice` service write straight to
+`QuoteRepository` (never through `PriceEngine`) with a real effective
+timestamp, replacing Milestone 2.7's explicitly ephemeral "prices you
+edit are not saved" typing.
+
+**Live-validated** against the real HL Stocks & Shares ISA: NVIDIA,
+Broadcom, TSMC, AMD, and e.l.f. Beauty all converted USD→GBP correctly at
+one consistent rate (~0.7429, cross-checked by hand against the ECB
+feed); ASML and WPP correctly remained manually priced (EUR and GBP
+respectively) with a working save flow, live-tested end to end
+(including the manual EUR price itself being correctly converted to GBP
+using the same in-effect rate). Dashboard and Portfolio page agreed
+exactly on every total. 37 test files / 268 tests passing (36 new since
+Stage 1); lint/typecheck/build all clean.
+
+**Known, disclosed limitations (see ADR 0032 and Technical Debt):** daily
+change is computed using *today's* FX rate applied to yesterday's price
+(no FX rate history is maintained — out of scope this milestone); the
+Dashboard's "largest daily gainer/loser" can mislabel the smallest gain as
+a "loser" when every holding moved the same direction on the day — the
+same pre-existing convention `largestGain`/`largestLoss` (unrealised)
+already used, kept for consistency rather than fixed in isolation.
 
 ---
 
@@ -210,13 +416,14 @@ already own.
 | -------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Next.js        | Implemented | 16.2.10, App Router, Server Actions as the entire API surface today.                                                                                        |
 | Supabase       | Implemented | Live dev project `arbor-lyme-capital-dev` (us-east-1), provisioned Phase 2.5.                                                                               |
-| PostgreSQL     | Implemented | 17 migrations applied to the live project (confirmed via `supabase migration list` after Milestone 2.7 caught one that had been validated locally but not deployed); RLS + atomic RPCs throughout. |
+| PostgreSQL     | Implemented | 19 migrations applied to the live project, confirmed via `supabase migration list` (`fx_rates` table + `market_quotes` extensions pushed and live-verified this milestone). RLS + atomic RPCs throughout. |
 | Authentication | Implemented | Supabase Auth, admin-provisioned users only, trigger-based profile creation.                                                                                |
 | Hosting        | Planned     | No Vercel project exists yet; `docs/vercel-preparation.md` is prep-only.                                                                                    |
 | CI/CD          | Partial     | GitHub Actions runs format/lint/typecheck/unit tests/audit/build; no e2e in CI; no deploy pipeline (no host to deploy to yet).                              |
-| Testing        | Partial     | 204 unit tests, 7/8 e2e (1 skipped, needs live creds — now available), live DB integration validation both throwaway and real, plus a full manual browser pass against live infrastructure in Milestone 2.7. No component-level UI tests. |
+| Testing        | Partial     | 268 unit tests, 7/8 e2e (1 skipped, needs live creds — now available), live DB integration validation both throwaway and real, plus full manual browser passes against live infrastructure. No component-level UI tests. |
 | Logging        | Implemented | Structured logger (`src/lib/logger.ts`), used in Server Action catch blocks and the RPC error mapper.                                                       |
 | Monitoring     | Planned     | No APM/observability platform beyond application logs; no alerting.                                                                                         |
+| Market data    | Implemented, live-verified | Price Engine Stage 1 (Twelve Data, exchange-traded securities) + FX conversion (ECB daily reference rates, ADR 0032) both live-verified against the real HL Stocks & Shares ISA: NVIDIA/Broadcom/AMD/TSMC/e.l.f. Beauty refresh and convert to GBP correctly; ASML/WPP correctly, persistently manually priced (Twelve Data's free tier doesn't cover their exchanges). Dashboard/Portfolio/Company pages all read persisted data only — no vendor call outside the explicit refresh action. Stage 2 (fund NAVs) and scheduled refresh both still deferred. |
 
 ---
 
@@ -316,6 +523,20 @@ automated).
   no current workflow needs that association surfaced; deliberately not
   built speculatively (ADR 0028's own "Alternatives Considered"). _Target:_
   if a reporting view ever needs a trade's all-in cost including its fee.
+- **Daily change uses today's FX rate applied to yesterday's price, not
+  yesterday's actual FX rate** (ADR 0032) — this platform maintains no FX
+  rate history, so a holding's "daily change in GBP" slightly misstates
+  the FX-driven portion of a move on days GBP itself moves materially
+  against that holding's currency. _Deferred:_ building FX rate history is
+  explicitly out of this milestone's scope (no historical charts).
+  _Target:_ revisit only if this proves materially wrong in practice.
+- **Dashboard/Portfolio "largest daily gainer/loser" can mislabel the
+  smallest gain as a "loser"** when every live-priced holding moved the
+  same direction on the day (ADR 0032) — the same pre-existing convention
+  `largestGain`/`largestLoss` (unrealised, Milestone 2.7) already uses,
+  kept for consistency rather than fixed in isolation. _Deferred:_ fixing
+  properly means revisiting both the new daily fields and the pre-existing
+  unrealised ones together. _Target:_ a future UI-polish pass.
 
 **Low**
 
@@ -356,6 +577,18 @@ automated).
   fixing was explicitly out of scope when ADR 0029 was written.
   _Target:_ the next time any of these five files is touched for an
   unrelated reason.
+- **Price Engine Stage 1 accepted approximations** (ADR 0031): quote
+  quality is inferred from market-open state, not a real per-call vendor
+  signal; `TwelveDataPriceProvider.getPrices` calls the single-quote
+  endpoint once per identifier rather than a true vendor batch call;
+  `MarketStatusProvider` is implemented and composed but not yet wired
+  into any visible UI; a refreshed quote's on-screen age freezes until the
+  next page reload rather than ticking upward live. _Deferred:_ all
+  documented as deliberate, low-severity trade-offs in ADR 0031's own
+  Future Review Criteria, not defects. _Target:_ revisit `getPrices`
+  batching if holding count grows; revisit quality inference if a Twelve
+  Data tier ever exposes it directly; wire `MarketStatusProvider` into the
+  UI the first time a milestone actually wants a live open/closed badge.
 
 ---
 
@@ -392,7 +625,7 @@ turn comes — intentionally a placeholder, not a committed backlog.
 
 # Open ADRs
 
-All 30 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
+All 32 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
 Dedicated, Non-Executing Domain), which is `Superseded by 0023`
 (Investment Rating / Portfolio Action split), and **ADR 0026** (Portfolio
 Accounting Principles), whose fee/interest/tax section is superseded by
@@ -447,12 +680,61 @@ anything in this area needs revisiting:
   workflow rather than a real vendor, since no realistically-priced fund
   data vendor exists). Implementation of either stage requires separate
   approval.
+- **ADR 0031** — Price Engine Stage 1 Implementation. Records what Stage 1
+  actually built: `TwelveDataPriceProvider`/`TwelveDataMarketStatusProvider`,
+  `RoutingPriceEngine` (routing map changed to `Partial<Record<...>>` from
+  ADR 0030's original full-`Record` description, since Stage 1 has no
+  `fund` provider yet), the `market_quotes` table and `companies.security_type`
+  column, price-quality inference (approximated from market-open state,
+  not a real per-call vendor signal), and manual-refresh-only wiring —
+  scheduled refresh is explicitly deferred. Names several accepted
+  approximations worth a future contributor's attention: quote quality is
+  inferred not measured, `getPrices` is not a true vendor batch call, and
+  `MarketStatusProvider` is implemented but not yet surfaced in any UI.
+- **ADR 0032** — FX Conversion and Live Quote Propagation. Closes the
+  currency-conversion gap ADR 0031's own live validation found.
+  `EcbFxRateProvider` (European Central Bank daily reference rates, chosen
+  over Twelve Data's paid-tier-gated FX and Bank of England data — a daily
+  reference rate is the right shape of data for decision support, not
+  trade execution); conversion built into `domain/portfolio/performance.ts`
+  as one structural choke point (`currentPriceBase = currentPrice *
+  fxRateToBase`); cost basis confirmed to already be GBP-denominated at
+  each trade's historical rate, no historical transaction altered; a new
+  shared `buildPortfolioValuation` composer used identically by the
+  Dashboard, Portfolio, and Company pages so persisted quotes propagate
+  without any page calling a vendor directly; manual price entry now
+  genuinely persisted (`PriceQuality: "manual"`) rather than ephemeral.
+  Live-validated against the real HL Stocks & Shares ISA. Names two
+  disclosed limitations worth a future contributor's attention: daily
+  change uses today's FX rate (no FX history maintained), and "largest
+  daily gainer/loser" can mislabel a small gain as a loss when nothing
+  actually lost value that day (see Technical Debt).
 
 ---
 
 # Recent Milestones
 
-1. **2026-07-20 — Milestone 2.7 Portfolio Completion & UX Polish.**
+1. **2026-07-21 — Phase 3.2: FX Conversion and Live Quote Propagation.**
+   `EcbFxRateProvider` (ECB daily reference rates), currency conversion
+   built into `domain/portfolio/performance.ts`, a shared
+   `buildPortfolioValuation` composer used by Dashboard/Portfolio/Company
+   pages alike, genuinely persisted manual pricing. ADR 0032. Closes the
+   FX gap Stage 1's own live validation found. Live-validated against the
+   real HL Stocks & Shares ISA. Commit pending.
+2. **2026-07-21 — Price Engine Stage 1 Implementation.** Twelve Data-backed
+   `SecurityPriceProvider`/`MarketStatusProvider`, `RoutingPriceEngine`,
+   Postgres `QuoteRepository`, `companies.security_type`, price-quality/
+   quote-age metadata, manual "Refresh prices" UI. ADR 0031. Scheduled
+   refresh deferred.
+4. **2026-07-21 — ADR 0030 Price Engine Architecture + provider evaluation.**
+   Provider-neutral, security-type-routed pricing interfaces; market-data
+   vendor evaluation recommending Twelve Data. `aeb49a7`.
+5. **2026-07-21 — HL Stocks & Shares ISA Import + ADR 0029.** Real portfolio
+   data (opening positions/cash, six individually recorded purchases)
+   imported into a new, separate portfolio via authenticated scripts
+   calling the existing atomic RPCs; reconciled exactly to source figures;
+   portfolio selector added; Rounding Policy ADR. `c11b665`.
+6. **2026-07-20 — Milestone 2.7 Portfolio Completion & UX Polish.**
    Ledger-based Cash Management with a live balance preview; fee/interest/
    tax as first-class transaction types (ADR 0028); filtered/sorted/
    paginated Transactions with a detail + audit-history view; Portfolio
@@ -460,26 +742,26 @@ anything in this area needs revisiting:
    client-side price-marking panel; Dashboard rebuilt as a daily workspace;
    full company tab set; shared table primitives; branding/nav polish.
    Live browser testing caught and fixed an undeployed migration and a
-   missing audit-event publish. Commit pending.
-2. **2026-07-20 — Phase 2.5 Production Readiness.** Live Supabase project
+   missing audit-event publish. `445a547`.
+7. **2026-07-20 — Phase 2.5 Production Readiness.** Live Supabase project
    provisioned, migrations pushed, demo data seeded and verified, full
    manual click-through against live infrastructure, four UX/perf fixes.
    `3e307e9`.
-3. **2026-07-20 — Security and Financial Integrity Hardening.** Closed the
+8. **2026-07-20 — Security and Financial Integrity Hardening.** Closed the
    critical RPC-bypass gap; atomic, server-computed, concurrency-safe
    trading writes; `ConflictError`; live-tested including real
    concurrency. `b731220`.
-4. **2026-07-19 — Phase 2 Remediation.** Fixed 6 of 9 Architecture Review
+9. **2026-07-19 — Phase 2 Remediation.** Fixed 6 of 9 Architecture Review
    findings from the Phase 2 build (atomicity, RLS validation, N+1
    dashboard, multi-portfolio UI, cross-company Journal view, ADR 0024).
    `11671cf`.
-5. **2026-07-19 — Phase 2: Investment Research Platform.** The full
-   consolidated milestone — 8 new domains, 10 tables, 9 UI screens.
-   `8927bcf`.
-6. **2026-07-19 — Foundation completion.** CI, Dependabot, developer
-   documentation, closing out the Foundation milestone's auth/settings/
-   audit/UI work. `3584da2` (and the preceding Foundation commits
-   `2b69446`…`15284ef`).
+10. **2026-07-19 — Phase 2: Investment Research Platform.** The full
+    consolidated milestone — 8 new domains, 10 tables, 9 UI screens.
+    `8927bcf`.
+11. **2026-07-19 — Foundation completion.** CI, Dependabot, developer
+    documentation, closing out the Foundation milestone's auth/settings/
+    audit/UI work. `3584da2` (and the preceding Foundation commits
+    `2b69446`…`15284ef`).
 
 ---
 
@@ -512,38 +794,47 @@ new ground this codebase hasn't covered yet.
 
 # Session Handover
 
-**Current state:** Milestone 2.7 is complete but not yet committed. The
-Portfolio module (cash management, transactions, performance) is
-production ready, live-verified against the real Supabase project
-including submitting a real transaction and reading it back through the
-Audit history view. `pnpm check`/`pnpm build`/`vitest run` (204 tests) are
-all clean, and the live database schema is confirmed in sync with local
-migrations (`supabase migration list` shows all 17 applied). The project
-is at a genuine decision boundary — nothing is broken or blocking, but the
-next step is a real choice, not mechanical continuation.
+**Current state:** Phase 3.2 — FX Conversion and Live Quote Propagation
+(ADR 0032) is implemented, migrated to the live Supabase project, and
+**live-validated** end to end against the real HL Stocks & Shares ISA —
+`pnpm exec tsc --noEmit`, `pnpm exec eslint src --max-warnings=0`, `pnpm
+exec vitest run` (268/268), and `pnpm build` are all clean. This closes
+the FX-conversion gap Price Engine Stage 1's own live validation
+surfaced last session: NVIDIA/Broadcom/TSMC/AMD/e.l.f. Beauty all convert
+USD→GBP correctly at one consistent rate (verified by hand against the
+ECB feed); ASML/WPP correctly remain manually priced (EUR and GBP
+respectively), with a genuinely persisted (not ephemeral) manual-price
+save flow live-tested successfully, including the manual EUR entry itself
+converting to GBP correctly. Dashboard and Portfolio page agreed exactly
+on every total. Two minor, disclosed limitations remain (daily change
+uses today's FX rate; "largest daily loser" can mislabel a small gain
+when nothing actually lost value) — both documented in ADR 0032 and
+Technical Debt, neither blocking. It is **not yet committed**.
 
-**What should happen next:** Commit approval for Milestone 2.7, then
-awaiting explicit approval to begin Phase 3 (Document Repository) — per
-`CLAUDE.md`, Phase 3 does not start automatically. The user may instead
-prefer to close out one or more Technical Debt items first (the
-click-level idempotency gap and a Vercel staging deployment are the two
-most consequential ones still open).
+**What should happen next:**
+
+1. Request commit approval for this milestone.
+2. Revoke the Twelve Data API key and Supabase Personal Access Token used
+   this session and last, if they're no longer needed on an ongoing basis.
+3. After committing, Phase 3 (Document Repository) remains the next
+   roadmap phase — still awaiting explicit approval to begin per
+   `CLAUDE.md`. The user may instead prefer to prioritize Stage 2 (fund
+   NAV pricing), scheduled refresh, or a Twelve Data plan upgrade (to
+   unlock live ASML/WPP pricing) — all now well-scoped follow-ups given
+   this milestone's live-validation findings.
 
 **Requiring user input:**
 
-- Commit approval for Milestone 2.7.
-- Approval to begin Phase 3 after that, or a different priority instead.
-- If Vercel deployment is wanted next: creating that account/project is
-  the same category of action Supabase project creation was — this
-  project's own docs (`docs/vercel-preparation.md`) already establish it
-  as the user's call, not something to do unilaterally.
-- A Supabase Personal Access Token was used again this session (to
-  diagnose and push the migration Milestone 2.7's live testing found
-  undeployed) — recommended to revoke it from
-  [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens)
-  now that it's no longer needed; the app itself never needs it.
+- Commit approval for this milestone.
+- Priority for whichever follow-up is next: Phase 3, Stage 2 fund
+  pricing, scheduled refresh, or a Twelve Data plan upgrade.
+- Separately, Milestone 2.7 / HL import / ADR 0029 / ADR 0030 / Price
+  Engine Stage 1 (ADR 0031) are already committed (`445a547`, `c11b665`,
+  `aeb49a7`) or ready to commit alongside this milestone — no outstanding
+  approval blockers beyond the commit itself.
+- If Vercel deployment is wanted at some point: creating that account/
+  project is the same category of action Supabase project creation was —
+  `docs/vercel-preparation.md` already establishes it as the user's call.
 
-**Known blockers:** None for Phase 3 (self-contained, no external
-dependency beyond what already exists). Vercel deployment is blocked on
-the same kind of account-creation step Supabase was, whenever that becomes
-the priority.
+**Known blockers:** None — live validation is complete and every
+completion criterion for this milestone is met.

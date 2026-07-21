@@ -106,3 +106,23 @@ export class ProviderAuthError extends DomainError {
     this.name = "ProviderAuthError";
   }
 }
+
+/**
+ * Thrown when a portfolio calculation needs to convert a holding's price
+ * into the base currency but no FX rate — not even a stale one — has ever
+ * been successfully stored for that currency pair (ADR 0032). Distinct
+ * from "the rate is old": a stale rate is still usable data a caller can
+ * choose to convert with and flag; a missing rate is no data at all, so
+ * the caller must decide explicitly how to degrade (exclude the holding,
+ * show it unconverted, etc.) rather than silently treating one currency's
+ * amount as another's.
+ */
+export class MissingFxRateError extends DomainError {
+  constructor(
+    public readonly base: string,
+    public readonly quote: string
+  ) {
+    super(`No FX rate available for ${base}/${quote}`);
+    this.name = "MissingFxRateError";
+  }
+}
