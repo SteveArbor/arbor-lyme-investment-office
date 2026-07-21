@@ -55,7 +55,7 @@ What would cause this decision to be revisited.
 | 0003 | Use PostgreSQL as the Primary Database                                       | Accepted           |
 | 0004 | Use Vercel for Hosting                                                       | Accepted           |
 | 0005 | Adopt Domain-Driven Design Folder Structure                                  | Accepted           |
-| 0006 | Provider Plugin Architecture for External Integrations                       | Accepted           |
+| 0006 | Provider Plugin Architecture for External Integrations                       | Accepted\*\*        |
 | 0007 | Internal Application Event System                                            | Accepted           |
 | 0008 | Immutable Audit Log Strategy                                                 | Accepted           |
 | 0009 | Database-Backed Feature Flag Framework                                       | Accepted           |
@@ -79,5 +79,7 @@ What would cause this decision to be revisited.
 | 0027 | Money-Weighted Return via Newton-Raphson XIRR, No External Library          | Accepted           |
 | 0028 | Fee, Interest, and Tax as First-Class Transaction Types                     | Accepted           |
 | 0029 | Portfolio Rounding Policy                                                    | Accepted           |
+| 0030 | Price Engine — Provider-Neutral, Security-Type-Routed Market Data Architecture | Accepted         |
 
 \* ADR 0026's fee/interest/tax treatment section is superseded by ADR 0028; every other principle in ADR 0026 is unchanged.
+\*\* ADR 0006's flat `MarketDataProvider` interface is refined (not reversed) by ADR 0030's security-type-routed design, per ADR 0006's own Future Review Criteria.

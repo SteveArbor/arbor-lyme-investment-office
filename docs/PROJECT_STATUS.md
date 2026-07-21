@@ -2,7 +2,7 @@
 
 ## Project Status
 
-**Last Updated:** 2026-07-20
+**Last Updated:** 2026-07-21
 **Current Version:** 0.1.0
 **Current Branch:** `foundation`
 **Current Milestone:** Milestone 2.7 — Portfolio Completion & User
@@ -392,15 +392,16 @@ turn comes — intentionally a placeholder, not a committed backlog.
 
 # Open ADRs
 
-All 29 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
+All 30 ADRs are `Accepted` except **ADR 0014** (Decision Engine as a
 Dedicated, Non-Executing Domain), which is `Superseded by 0023`
 (Investment Rating / Portfolio Action split), and **ADR 0026** (Portfolio
 Accounting Principles), whose fee/interest/tax section is superseded by
 **ADR 0028** while every other principle it states remains authoritative —
 both supersessions are recorded, not silently reversed, per this project's
-own ADR convention.
+own ADR convention. **ADR 0006**'s `MarketDataProvider` interface is
+similarly refined (not reversed) by ADR 0030.
 
-No ADR is currently `Proposed`/under active review. The five most
+No ADR is currently `Proposed`/under active review. The six most
 consequential recent decisions, worth a future contributor's attention if
 anything in this area needs revisiting:
 
@@ -434,6 +435,18 @@ anything in this area needs revisiting:
   policy, not a defect. Names five UI files that still call raw
   `.toFixed()` instead of the shared formatters as a known deviation (see
   Technical Debt).
+- **ADR 0030** — Price Engine architecture. Interfaces only
+  (`src/domain/market/`: `PriceEngine`, `SecurityPriceProvider`,
+  `FxRateProvider`, `QuoteRepository`) — no concrete provider, HTTP client,
+  or scheduled job exists yet. Routes by `SecurityType` (equity/ETF/
+  investment trust/fund) to a configurable provider per type, so the
+  domain never knows which vendor answered. Staged: Stage 1
+  (exchange-traded securities, Twelve Data per
+  `docs/market-data-provider-evaluation.md`) and Stage 2 (UK OEIC/unit
+  trust funds, deliberately backed by the existing manual-marking
+  workflow rather than a real vendor, since no realistically-priced fund
+  data vendor exists). Implementation of either stage requires separate
+  approval.
 
 ---
 

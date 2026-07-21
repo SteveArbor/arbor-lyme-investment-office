@@ -1,14 +1,25 @@
-# domain/market — Planned (Phase 3)
+# domain/market — Interfaces only (ADR 0030)
 
-**Status:** Not implemented. This directory contains no code yet — do not import
-from this path.
+**Status:** Interfaces defined (`model.ts`, `providers.ts`, `repository.ts`,
+`service.ts`). No implementation exists yet — do not import a concrete
+provider from this path, because there isn't one. `infrastructure/` has no
+`market` subdirectory yet; the first one to be added (a `TwelveDataProvider`,
+a `ManualFundPriceProvider`, a `RoutingPriceEngine`, a Supabase
+`QuoteRepository`) is implementation work explicitly deferred until
+`docs/adr/0030-price-engine-architecture.md`'s staging plan is approved.
 
-**Purpose:** market data (prices, instruments/assets, reference data), consumed
-via the `MarketDataProvider` interface this context will own.
+**Purpose:** the Price Engine — a provider-neutral, security-type-routed
+pricing layer. Supplies prices (`PriceEngine`), currency conversion
+(`FxRateProvider`), and price history (`QuoteRepository`) to whichever
+domain needs them, without that domain ever knowing which vendor answered.
 
-**Design reference:** `docs/provider-architecture.md` (`MarketDataProvider`),
+**Design reference:** `docs/adr/0030-price-engine-architecture.md` (the
+authoritative decision), `docs/provider-architecture.md` (`MarketDataProvider`
+— refined, not superseded, by ADR 0030's more granular routing), ADR 0006,
 `docs/data-flow.md` §4 (Refreshing Market Data), `docs/rules-engine.md`
-(stale-data rule).
+(stale-data rule), `docs/market-data-provider-evaluation.md` (the vendor
+research this architecture was designed against).
 
-**Target phase:** Phase 3 — Market Data Provider Integration and Caching
-(`docs/development-roadmap.md`).
+**Target phase:** implementation staged as Stage 1 (exchange-traded
+securities only) and Stage 2 (UK OEIC/unit trust funds, daily NAV) — see the
+ADR. Neither stage has been built yet.

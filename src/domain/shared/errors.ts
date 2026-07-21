@@ -61,3 +61,48 @@ export class NotFoundError extends DomainError {
     this.name = "NotFoundError";
   }
 }
+
+/**
+ * The three provider-failure types every `provider-architecture.md`
+ * implementation is meant to map a vendor's own error shape into (named
+ * there and in `docs/data-flow.md` since ADR 0006, first actually needed by
+ * ADR 0030's Price Engine). Living here, not in a single domain, because
+ * they're deliberately reusable across every future provider-backed
+ * context (market data today; AI, notifications, documents later) — the
+ * whole point of naming them once, centrally, is that a caller reacts to
+ * "the vendor is rate-limiting us" the same way regardless of which
+ * interface or which concrete vendor raised it.
+ */
+
+/** Thrown when a provider's own request-rate ceiling has been hit. Callers should back off, not fail the whole operation as if the request were invalid. */
+export class ProviderRateLimitError extends DomainError {
+  constructor(
+    public readonly providerName: string,
+    public readonly retryAfterSeconds?: number
+  ) {
+    super(
+      `${providerName} rate limit exceeded` +
+        (retryAfterSeconds !== undefined ? ` — retry after ${retryAfterSeconds}s` : "")
+    );
+    this.name = "ProviderRateLimitError";
+  }
+}
+
+/** Thrown when a provider is unreachable, times out, or returns a server-side failure unrelated to the specific request made. */
+export class ProviderUnavailableError extends DomainError {
+  constructor(
+    public readonly providerName: string,
+    cause?: string
+  ) {
+    super(`${providerName} is unavailable` + (cause ? `: ${cause}` : ""));
+    this.name = "ProviderUnavailableError";
+  }
+}
+
+/** Thrown when a provider rejects the credentials it was called with (expired/invalid/revoked API key). Distinct from rate-limit/unavailable because retrying immediately never helps — the configuration itself needs fixing. */
+export class ProviderAuthError extends DomainError {
+  constructor(public readonly providerName: string) {
+    super(`${providerName} rejected the configured credentials`);
+    this.name = "ProviderAuthError";
+  }
+}

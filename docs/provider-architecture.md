@@ -42,9 +42,10 @@ stage.
 
 ## Interfaces
 
-### `MarketDataProvider`
+### `MarketDataProvider` (refined by ADR 0030 — see below)
 
-Supplies prices and reference data to the `market` domain context.
+Supplies prices and reference data to the `market` domain context. The flat
+shape originally sketched here —
 
 ```ts
 interface MarketDataProvider {
@@ -55,6 +56,20 @@ interface MarketDataProvider {
   getInstrumentDetails(symbol: AssetSymbol): Promise<InstrumentDetails>;
 }
 ```
+
+— turned out to leak exactly the way this document's own design rules
+warn against, once a real requirement (UK OEIC/unit trust funds needing an
+entirely different provider from exchange-traded equities) existed to test
+it against. **`docs/adr/0030-price-engine-architecture.md`** replaces this
+sketch with a security-type-routed `PriceEngine` (`domain/market/service.ts`)
+sitting in front of a `SecurityPriceProviderMap` (`domain/market/providers.ts`)
+— one provider slot per `SecurityType`, so equities, ETFs, investment
+trusts, and funds can each have their own vendor without the consuming
+domain ever knowing. A separate `FxRateProvider` handles currency
+conversion, deliberately not folded into pricing itself. This is a
+refinement of the decision ADR 0006 made (vendor-neutral interfaces,
+selected at composition time), not a reversal of it — ADR 0006's own Future
+Review Criteria anticipated this exact redesign.
 
 **Candidate implementations:** `AlphaVantageProvider`, `PolygonProvider`,
 `TwelveDataProvider`, `YahooFinanceProvider`. Different vendors have different
